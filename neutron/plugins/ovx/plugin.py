@@ -73,17 +73,17 @@ class OVXRpcCallbacks():
             # assuming device_id is of form DPID/PORT_NUMBER
             (dpid, port_number) = neutron_port['device_id'].split("/")
 
-        (ovx_vdpid, ovx_vport) = self.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
+        (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
          
         # Stop port if requested (port is started by default in OVX)
         if not db_port['admin_state_up']:
-            self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+            self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
         # Save mapping between Neutron network ID and OVX tenant ID
         ovxdb.add_ovx_port_number(rpc_context.session, db_port['id'], ovx_vport)
 
-        # # TODO: add support for non-bigswitch networks
-        # self.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  neutron_port['mac_address'])
+        # TODO: add support for non-bigswitch networks
+        self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  port_db['mac_address'])
         
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):
