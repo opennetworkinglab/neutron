@@ -54,7 +54,6 @@ class OVXRpcCallbacks():
 
     def update_port(self, rpc_context, **kwargs):
         LOG.debug(_("Call from agent received"))
-        session = rpc_context.session
         port_id = kwargs.get('port_id')
         dpid = kwargs.get('dpid')
         port_number = kwargs.get('port_number')
@@ -64,7 +63,7 @@ class OVXRpcCallbacks():
         port_db = self.plugin.get_port(rpc_context, port_id)        
         #port_db = self.plugin.super(OVXNeutronPlugin, self).get_port(rpc_context, port_id)
         neutron_network_id = port_db['network_id']
-        ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
+        ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
         
         # # TODO: if nova is calling us: wait for agent, else assume the device_id contains the dpid & port
         # # based on nuage plugin
@@ -81,7 +80,7 @@ class OVXRpcCallbacks():
             self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
         # Save mapping between Neutron network ID and OVX tenant ID
-        ovxdb.add_ovx_port_number(context.session, db_port['id'], ovx_vport)
+        ovxdb.add_ovx_port_number(rpc_context.session, db_port['id'], ovx_vport)
 
         # # TODO: add support for non-bigswitch networks
         # self.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  neutron_port['mac_address'])
