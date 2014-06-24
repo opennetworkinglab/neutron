@@ -49,21 +49,15 @@ class OVXRpcCallbacks():
         '''
         return q_rpc.PluginRpcDispatcher([self, agents_db.AgentExtRpcCallback()])
 
-    @classmethod
-    def get_port_from_device(cls, device):
-        # TODO!!
-        port = ovs_db_v2.get_port_from_device(device)
-        if port:
-            port['device'] = device
-        return port
-
-    def update_device_up(self, rpc_context, **kwargs):
-        """Device is up on agent."""
+    def update_port(self, rpc_context, **kwargs):
         LOG.debug(_("Call from agent received"))
+        session = rpc_context.session
+        dpid = kwargs.get('dpid')
+        port = kwargs.get('port')
 
         print '=== RECEIVED UPDATE ==='
         print kwargs
-        
+    
         # neutron_network_id = neutron_port['network_id']
         # ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
 
@@ -93,7 +87,6 @@ class OVXRpcCallbacks():
         # # TODO: add support for non-bigswitch networks
         # self.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  neutron_port['mac_address'])
         
-
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):
 

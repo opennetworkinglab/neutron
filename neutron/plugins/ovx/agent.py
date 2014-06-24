@@ -31,7 +31,13 @@ from neutron.plugins.ovx.common import config
 LOG = log.getLogger(__name__)
 
 class OVXPluginApi(agent_rpc.PluginApi):
-    pass
+    def update_port(self, context, dpid, port):
+        """RPC to update information of ports on Neutron Server."""
+        LOG.info(_("Update port"))
+        self.call(context, self.make_msg('update_port',
+                                         topic=topics.AGENT,
+                                         dpid=dpid,
+                                         port=port))
 
 # class OVXRpcCallback(rpc_compat.RpcCallback):
 #     def __init__(self, context, agent):
@@ -87,28 +93,8 @@ class OVXNeutronAgent():
             print port
             print self.int_br.get_datapath_id()
             print self.int_br.get_port_ofport(port)
-            self.plugin_rpc.update_device_up(self.context, port, self.int_br.get_port_ofport(port))
-            #                                             self.int_br.get_datapath_id())
-            #                                 self.int_br.get_port_ofport(port))
-            
-            # try:
-            #     details = self.plugin_rpc.get_device_details(self.context,
-            #                                                  port,
-            #                                                  self.agent_id)
-            # except Exception as e:
-            #     LOG.debug(_("Unable to get port details for "
-            #                 "%(port)s: %(e)s"), {'port': port, 'e': e})
-            #     resync = True
-            #     continue
-            # if 'port_id' in details:
-            #     LOG.info(_("Port %(port)s updated. Details: %(details)s"),
-            #              {'port': port, 'details': details})
-            #     # create the networking for the port
-            #     # connect port to int-br
-            #     # update plugin about port status
-            #     self.plugin_rpc.update_device_up(self.context, port, self.agent_id, cfg.CONF.host)
-            # else:
-            #     LOG.info(_("Port %s not defined on plugin"), port)
+            self.plugin_rpc.update_port(self.context, self.int_br.get_datapath_id(), self.int_br.get_port_ofport(port))
+
         return resync
 
     def daemon_loop(self):
