@@ -20,6 +20,7 @@ from oslo.config import cfg
 from neutron.agent import rpc as agent_rpc
 from neutron.agent.linux import ovs_lib 
 from neutron.common import config as logging_config
+from neutron.common import utils
 #from neutron.common import rpc_compat
 from neutron.common import topics
 from neutron.openstack.common import log
@@ -49,7 +50,7 @@ class OVXNeutronAgent():
         self.setup_rpc()
 
     def setup_rpc(self):
-        self.host = socket.gethostname()
+        self.host = utils.get_hostname()
         self.agent_id = 'ovx-q-agent.%s' % self.host
         LOG.info(_("RPC agent_id: %s"), self.agent_id)
 
