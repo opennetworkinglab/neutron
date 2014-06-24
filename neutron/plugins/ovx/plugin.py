@@ -40,6 +40,9 @@ LOG = logging.getLogger(__name__)
 class OVXRpcCallbacks():
 
     RPC_API_VERSION = '1.1'
+
+    def __init__(self, plugin):
+        self.plugin = plugin
     
     def create_rpc_dispatcher(self):
         '''Get the rpc dispatcher for this manager.
@@ -57,8 +60,9 @@ class OVXRpcCallbacks():
         port_number = kwargs.get('port_number')
 
         print '=== RECEIVED UPDATE ===', port_id, dpid, port_number
-    
-        port_db = super(OVXNeutronPlugin, self).get_port(context, port_id)
+
+        port_db = self.plugin.get_port(rpc_context, port_id)        
+        #port_db = self.plugin.super(OVXNeutronPlugin, self).get_port(rpc_context, port_id)
         neutron_network_id = port_db['network_id']
         ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
         
@@ -110,7 +114,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN}
         self.conn = rpc.create_connection(new=True)
-        self.callbacks = OVXRpcCallbacks()
+        self.callbacks = OVXRpcCallbacks(self)
         self.dispatcher = self.callbacks.create_rpc_dispatcher()
         for svc_topic in self.service_topics.values():
             self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
