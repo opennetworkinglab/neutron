@@ -149,10 +149,11 @@ def main():
 
     logging_config.setup_logging(cfg.CONF)
 
+    integration_bridge = cfg.CONF.OVS.integration_bridge
     root_helper = cfg.CONF.AGENT.root_helper
     polling_interval = cfg.CONF.AGENT.polling_interval
     
-    agent = OVXNeutronAgent(root_helper, polling_interval)
+    agent = OVXNeutronAgent(integration_bridge, root_helper, polling_interval)
 
     LOG.info(_("Agent initialized successfully, now running... "))
     agent.daemon_loop()
