@@ -77,12 +77,17 @@ class OVXNeutronAgent():
 
         for port in ports:
             LOG.debug(_("Port %s added"), port)
+            
             # TODO: port should already be connected - VERIFY!
             # get dpid / port
             # inform agent about port, also pass in device
-            
-            # self.plugin_rpc.update_device_up(self.context, port, self.int_br.get_datapath_id(),
-            # self.int_br.get_port_ofport())
+            print '=== PROCESSING ==='
+            print port
+            print self.int_br.get_datapath_id()
+            print self.int_br.get_port_ofport(port)
+            self.plugin_rpc.update_device_up(self.context, port,
+                                             self.int_br.get_datapath_id(),
+                                             self.int_br.get_port_ofport())
             
             # try:
             #     details = self.plugin_rpc.get_device_details(self.context,

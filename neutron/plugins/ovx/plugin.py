@@ -58,6 +58,9 @@ class OVXRpcCallbacks():
     def update_device_up(self, rpc_context, **kwargs):
         """Device is up on agent."""
         LOG.debug(_("Call from agent received"))
+
+        print '=== RECEIVED UPDATE ==='
+        print kwargs
         
         # neutron_network_id = neutron_port['network_id']
         # ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
