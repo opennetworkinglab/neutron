@@ -53,7 +53,7 @@ class OVXNeutronAgent():
         
         self.root_helper = root_helper
         self.polling_interval = polling_interval
-        self.datapath_id = "0x%s" % self.int_br.get_datapath_id()
+        self.dpid = self.int_br.get_datapath_id()
 
         self.setup_rpc()
 
@@ -91,9 +91,8 @@ class OVXNeutronAgent():
             # inform agent about port, also pass in device
             ovs_port = self.int_br.get_vif_port_by_id(port)
             port_id = ovs_port.vif_id
-            dpid = self.int_br.get_datapath_id()
             port_number = ovs_port.ofport
-            self.plugin_rpc.update_port(self.context, port_id, dpid, port_number)
+            self.plugin_rpc.update_port(self.context, port_id, self.dpid, port_number)
 
         return resync
 

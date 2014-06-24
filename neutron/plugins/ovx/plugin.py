@@ -58,31 +58,26 @@ class OVXRpcCallbacks():
 
         print '=== RECEIVED UPDATE ===', port_id, dpid, port_number
     
-        # neutron_network_id = neutron_port['network_id']
-        # ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
-
+        port_db = super(OVXNeutronPlugin, self).get_port(context, port_id)
+        neutron_network_id = port_db['network_id']
+        ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
+        
         # # TODO: if nova is calling us: wait for agent, else assume the device_id contains the dpid & port
         # # based on nuage plugin
-        # dpid = None
-        # port_number = None
-        # port_prefix = 'compute:'
-        # if neutron_port['device_owner'].startswith(port_prefix):
-        #     # This request is coming from nova
-        #     dpid = '00:00:00:00:00:00:02:00'
-        #     port_number = 4
-        # else:
-        #     # TODO: fail if no device_id given
-        #     # assuming device_id is of form DPID/PORT_NUMBER
-        #     (dpid, port_number) = neutron_port['device_id'].split("/")
+        port_prefix = 'compute:'
+        if not port_db['device_owner'].startswith(port_prefix):
+            # TODO: fail if no device_id given
+            # assuming device_id is of form DPID/PORT_NUMBER
+            (dpid, port_number) = neutron_port['device_id'].split("/")
 
-        # (ovx_vdpid, ovx_vport) = self.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
+        (ovx_vdpid, ovx_vport) = self.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
          
-        # # Stop port if requested (port is started by default in OVX)
-        # if not neutron_port['admin_state_up']:
-        #     self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+        # Stop port if requested (port is started by default in OVX)
+        if not db_port['admin_state_up']:
+            self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
-        # # Save mapping between Neutron network ID and OVX tenant ID
-        # ovxdb.add_ovx_port_number(context.session, neutron_port['id'], ovx_vport)
+        # Save mapping between Neutron network ID and OVX tenant ID
+        ovxdb.add_ovx_port_number(context.session, db_port['id'], ovx_vport)
 
         # # TODO: add support for non-bigswitch networks
         # self.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  neutron_port['mac_address'])
