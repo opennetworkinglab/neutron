@@ -77,8 +77,6 @@ class OVXNeutronAgent():
 
     def update_ports(self, registered_ports):
         ports = self.int_br.get_vif_port_set()
-        #ports = set(self.int_br.get_port_name_list())
-        print 'PORTS', ports
         return ports - registered_ports
 
     def process_ports(self, ports):
@@ -91,10 +89,9 @@ class OVXNeutronAgent():
             # get dpid / port
             # inform agent about port, also pass in device
             print '=== PROCESSING ==='
-            print port
+            p = self.int_br.get_vif_port_by_id(port)
+            print p
             print self.int_br.get_datapath_id()
-            print port.ofport
-            print self.int_br.get_port_ofport(port)
             self.plugin_rpc.update_port(self.context, self.int_br.get_datapath_id(), self.int_br.get_port_ofport(port))
 
         return resync
