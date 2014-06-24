@@ -36,8 +36,9 @@ class OVXPluginApi(agent_rpc.PluginApi):
         LOG.info(_("Update port"))
         self.call(context, self.make_msg('update_port',
                                          topic=topics.AGENT,
+                                         port_id=port_id,
                                          dpid=dpid,
-                                         port=port))
+                                         port_number=port_number))
 
 # class OVXRpcCallback(rpc_compat.RpcCallback):
 #     def __init__(self, context, agent):
@@ -88,11 +89,11 @@ class OVXNeutronAgent():
             # TODO: port should already be connected - VERIFY!
             # get dpid / port
             # inform agent about port, also pass in device
-            print '=== PROCESSING ==='
-            p = self.int_br.get_vif_port_by_id(port)
-            print 'HELLO', p, 'HELLO AGAIN'
-            print self.int_br.get_datapath_id()
-            self.plugin_rpc.update_port(self.context, self.int_br.get_datapath_id(), self.int_br.get_port_ofport(port))
+            ovs_port = self.int_br.get_vif_port_by_id(port)
+            port_id = ovs_port.get('iface-id')
+            dpid = self.int_br.get_datapath_id()
+            port_number = ovs_port.get('ofport')
+            self.plugin_rpc.update_port(self.context, port_id, dpid, port_number)
 
         return resync
 

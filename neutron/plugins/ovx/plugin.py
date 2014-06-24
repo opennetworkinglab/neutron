@@ -52,11 +52,11 @@ class OVXRpcCallbacks():
     def update_port(self, rpc_context, **kwargs):
         LOG.debug(_("Call from agent received"))
         session = rpc_context.session
+        port_id = kwargs.get('port_id')
         dpid = kwargs.get('dpid')
-        port = kwargs.get('port')
+        port_number = kwargs.get('port_number')
 
-        print '=== RECEIVED UPDATE ==='
-        print kwargs
+        print '=== RECEIVED UPDATE ===', port_id, dpid, port_number
     
         # neutron_network_id = neutron_port['network_id']
         # ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
