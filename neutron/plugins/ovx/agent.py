@@ -90,7 +90,7 @@ class OVXNeutronAgent():
             # inform agent about port, also pass in device
             print '=== PROCESSING ==='
             p = self.int_br.get_vif_port_by_id(port)
-            print p
+            print 'HELLO', p, 'HELLO AGAIN'
             print self.int_br.get_datapath_id()
             self.plugin_rpc.update_port(self.context, self.int_br.get_datapath_id(), self.int_br.get_port_ofport(port))
 
