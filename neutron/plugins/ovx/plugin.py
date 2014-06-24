@@ -37,7 +37,7 @@ from neutron.plugins.ovx.common import config
 
 LOG = logging.getLogger(__name__)
 
-class OVSRpcCallbacks():
+class OVXRpcCallbacks():
 
     def create_rpc_dispatcher(self):
         '''Get the rpc dispatcher for this manager.
