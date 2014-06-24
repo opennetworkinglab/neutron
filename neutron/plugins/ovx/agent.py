@@ -31,10 +31,10 @@ LOG = log.getLogger(__name__)
 class OVXPluginApi(agent_rpc.PluginApi):
     pass
 
-# class OVXRpcCallback(rpc_compat.RpcCallback):
-#     def __init__(self, context, agent):
-#         self.context = context
-#         self.agent = agent
+class OVXRpcCallback(rpc_compat.RpcCallback):
+    def __init__(self, context, agent):
+        self.context = context
+        self.agent = agent
     
 class OVXNeutronAgent():
     def __init__(self, integration_bridge, root_helper, polling_interval):
@@ -46,29 +46,29 @@ class OVXNeutronAgent():
         self.polling_interval = polling_interval
         self.datapath_id = "0x%s" % self.int_br.get_datapath_id()
 
-        self.setup_rpc()
+    #     self.setup_rpc()
 
-    def setup_rpc(self):
-        self.host = socket.gethostname()
-        self.agent_id = 'ovx-q-agent.%s' % self.host
-        LOG.info(_("RPC agent_id: %s"), self.agent_id)
+    # def setup_rpc(self):
+    #     self.host = socket.gethostname()
+    #     self.agent_id = 'ovx-q-agent.%s' % self.host
+    #     LOG.info(_("RPC agent_id: %s"), self.agent_id)
 
-        self.topic = topics.AGENT
-        self.context = context.get_admin_context_without_session()
+    #     self.topic = topics.AGENT
+    #     self.context = context.get_admin_context_without_session()
 
-        self.plugin_rpc = OVXPluginApi(topics.PLUGIN)
-        # not doing state_rpc for now
-        #self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
+    #     self.plugin_rpc = OVXPluginApi(topics.PLUGIN)
+    #     # not doing state_rpc for now
+    #     #self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
 
-        # # RPC network init
-        # self.callback = OVXRpcCallback(self.context, self)
-        # self.dispatcher = dispatcher.RpcDispatcher([self.callback])
+    #     # # RPC network init
+    #     self.callback = OVXRpcCallback(self.context, self)
+    #     self.dispatcher = dispatcher.RpcDispatcher([self.callback])
 
-        # consumers = [[topics.PORT, topics.UPDATE]]
-        # self.connection = agent_rpc.create_consumers(self.dispatcher, self.topic, consumers)
+    #     # consumers = [[topics.PORT, topics.UPDATE]]
+    #     # self.connection = agent_rpc.create_consumers(self.dispatcher, self.topic, consumers)
 
     def update_ports(self, current_ports):
-        ports = set(int_br.get_port_name_list())
+        ports = set(self.int_br.get_port_name_list())
         print 'PORTS', ports
         return ports - current_ports
 
@@ -80,6 +80,9 @@ class OVXNeutronAgent():
             # TODO: port should already be connected - VERIFY!
             # get dpid / port
             # inform agent about port, also pass in device
+            
+            # self.plugin_rpc.update_device_up(self.context, port, self.int_br.get_datapath_id(),
+            # self.int_br.get_port_ofport())
             
             # try:
             #     details = self.plugin_rpc.get_device_details(self.context,

@@ -21,16 +21,73 @@ This plugin will forward authenticated REST API calls to OVX.
 from oslo.config import cfg
 
 from neutron.common import constants as n_const
+from neutron.common import rpc as q_rpc
+from neutron.common import topics
+from neutron.db import agents_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import portbindings_base
 from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
 from neutron.openstack.common import log as logging
+from neutron.openstack.common import rpc
+from neutron.plugins.common import constants as svc_constants
 from neutron.plugins.ovx import ovxlib
 from neutron.plugins.ovx import ovxdb
 from neutron.plugins.ovx.common import config
 
 LOG = logging.getLogger(__name__)
+
+class OVSRpcCallbacks():
+
+    def create_rpc_dispatcher(self):
+        '''Get the rpc dispatcher for this manager.
+
+        If a manager would like to set an rpc API version, or support more than
+        one class as the target of rpc messages, override this method.
+        '''
+        return q_rpc.PluginRpcDispatcher([self, agents_db.AgentExtRpcCallback()])
+
+    @classmethod
+    def get_port_from_device(cls, device):
+        # TODO!!
+        port = ovs_db_v2.get_port_from_device(device)
+        if port:
+            port['device'] = device
+        return port
+
+    def update_device_up(self, rpc_context, **kwargs):
+        """Device is up on agent."""
+        LOG.debug(_("Call from agent received"))
+        
+        # neutron_network_id = neutron_port['network_id']
+        # ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
+
+        # # TODO: if nova is calling us: wait for agent, else assume the device_id contains the dpid & port
+        # # based on nuage plugin
+        # dpid = None
+        # port_number = None
+        # port_prefix = 'compute:'
+        # if neutron_port['device_owner'].startswith(port_prefix):
+        #     # This request is coming from nova
+        #     dpid = '00:00:00:00:00:00:02:00'
+        #     port_number = 4
+        # else:
+        #     # TODO: fail if no device_id given
+        #     # assuming device_id is of form DPID/PORT_NUMBER
+        #     (dpid, port_number) = neutron_port['device_id'].split("/")
+
+        # (ovx_vdpid, ovx_vport) = self.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
+         
+        # # Stop port if requested (port is started by default in OVX)
+        # if not neutron_port['admin_state_up']:
+        #     self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+
+        # # Save mapping between Neutron network ID and OVX tenant ID
+        # ovxdb.add_ovx_port_number(context.session, neutron_port['id'], ovx_vport)
+
+        # # TODO: add support for non-bigswitch networks
+        # self.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  neutron_port['mac_address'])
+        
 
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):
@@ -53,6 +110,19 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # }
         }
         portbindings_base.register_port_dict_function()
+
+        self.setup_rpc()
+
+    def setup_rpc(self):
+        # RPC support
+        self.service_topics = {svc_constants.CORE: topics.PLUGIN}
+        self.conn = rpc.create_connection(new=True)
+        self.callbacks = OVXRpcCallbacks()
+        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        for svc_topic in self.service_topics.values():
+            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
+        # Consume from all consumers in a thread
+        self.conn.consume_in_thread()
 
     def create_subnet(self, context, subnet):
         LOG.debug(_("Neutron OVX: create_subnet() called"))
@@ -186,36 +256,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Plugin DB - Port Create and Return port
         print 'NEUTRON_PORT', neutron_port
         return neutron_port
-
-    def update_device_up(self, rpc_context, **kwargs):
-        neutron_network_id = neutron_port['network_id']
-        ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
-
-        # TODO: if nova is calling us: wait for agent, else assume the device_id contains the dpid & port
-        # based on nuage plugin
-        dpid = None
-        port_number = None
-        port_prefix = 'compute:'
-        if neutron_port['device_owner'].startswith(port_prefix):
-            # This request is coming from nova
-            dpid = '00:00:00:00:00:00:02:00'
-            port_number = 4
-        else:
-            # TODO: fail if no device_id given
-            # assuming device_id is of form DPID/PORT_NUMBER
-            (dpid, port_number) = neutron_port['device_id'].split("/")
-
-        (ovx_vdpid, ovx_vport) = self.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
-         
-        # Stop port if requested (port is started by default in OVX)
-        if not neutron_port['admin_state_up']:
-            self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
-
-        # Save mapping between Neutron network ID and OVX tenant ID
-        ovxdb.add_ovx_port_number(context.session, neutron_port['id'], ovx_vport)
-
-        # TODO: add support for non-bigswitch networks
-        self.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  neutron_port['mac_address'])
 
     def update_port(self, context, id, port):
         """Update values of a port.
