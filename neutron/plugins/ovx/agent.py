@@ -113,7 +113,7 @@ class OVXNeutronAgent():
                 sync = False
 
             added_ports = self.update_ports(ports)
-            print '*** NEW PORTS', new_ports
+            print '*** NEW PORTS', added_ports
             
             # notify plugin about port deltas
             if added_ports:
