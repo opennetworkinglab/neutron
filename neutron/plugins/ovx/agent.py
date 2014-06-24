@@ -90,9 +90,9 @@ class OVXNeutronAgent():
             # get dpid / port
             # inform agent about port, also pass in device
             ovs_port = self.int_br.get_vif_port_by_id(port)
-            port_id = ovs_port['iface-id']
+            port_id = ovs_port.vif_id
             dpid = self.int_br.get_datapath_id()
-            port_number = ovs_port['ofport']
+            port_number = ovs_port.ofport
             self.plugin_rpc.update_port(self.context, port_id, dpid, port_number)
 
         return resync
