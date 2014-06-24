@@ -39,6 +39,8 @@ LOG = logging.getLogger(__name__)
 
 class OVXRpcCallbacks():
 
+    RPC_API_VERSION = '1.1'
+    
     def create_rpc_dispatcher(self):
         '''Get the rpc dispatcher for this manager.
 
