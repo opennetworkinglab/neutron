@@ -31,7 +31,7 @@ from neutron.plugins.ovx.common import config
 LOG = log.getLogger(__name__)
 
 class OVXPluginApi(agent_rpc.PluginApi):
-    def update_port(self, context, dpid, port):
+    def update_port(self, context, port_id, dpid, port_number):
         """RPC to update information of ports on Neutron Server."""
         LOG.info(_("Update port"))
         self.call(context, self.make_msg('update_port',
