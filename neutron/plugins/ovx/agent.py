@@ -75,10 +75,11 @@ class OVXNeutronAgent():
         # consumers = [[topics.PORT, topics.UPDATE]]
         # self.connection = agent_rpc.create_consumers(self.dispatcher, self.topic, consumers)
 
-    def update_ports(self, current_ports):
-        ports = set(self.int_br.get_port_name_list())
+    def update_ports(self, registered_ports):
+        ports = selt.int_br.get_vif_port_set()
+        #ports = set(self.int_br.get_port_name_list())
         print 'PORTS', ports
-        return ports - current_ports
+        return ports - registered_ports
 
     def process_ports(self, ports):
         resync = False
@@ -92,6 +93,7 @@ class OVXNeutronAgent():
             print '=== PROCESSING ==='
             print port
             print self.int_br.get_datapath_id()
+            print self.port.ofport
             print self.int_br.get_port_ofport(port)
             self.plugin_rpc.update_port(self.context, self.int_br.get_datapath_id(), self.int_br.get_port_ofport(port))
 
@@ -109,23 +111,17 @@ class OVXNeutronAgent():
                 LOG.info(_("Agent out of sync with plugin!"))
                 ports.clear()
                 sync = False
-            port_info = {}
-            try:
-                new_ports = self.update_ports(ports)
-                print 'NEW PORTS', new_ports
-            except Exception:
-                LOG.exception(_("Update ports failed"))
-                sync = True
-            try:
-                # notify plugin about port deltas
-                if new_ports:
-                    LOG.debug(_("Agent loop has new ports!"))
-                    # If process ports fails, we should resync with plugin
-                    sync = self.process_ports(new_ports)
-                    ports = ports | new_ports
-            except Exception:
-                LOG.exception(_("Error in agent loop. Ports: %s"), new_ports)
-                sync = True
+
+            added_ports = self.update_ports(ports)
+            print '*** NEW PORTS', new_ports
+            
+            # notify plugin about port deltas
+            if added_ports:
+                LOG.debug(_("Agent loop has new ports!"))
+                # If process ports fails, we should resync with plugin
+                sync = self.process_ports(added_ports)
+                ports = ports | added_ports
+                    
             # sleep till end of polling interval
             elapsed = (time.time() - start)
             if (elapsed < self.polling_interval):
