@@ -87,9 +87,9 @@ class OVXNeutronAgent():
             print port
             print self.int_br.get_datapath_id()
             print self.int_br.get_port_ofport(port)
-            self.plugin_rpc.update_device_up(self.context, port,
-                                             self.int_br.get_datapath_id(),
-                                             self.int_br.get_port_ofport(port))
+            self.plugin_rpc.update_device_up(self.context, port, self.int_br.get_port_ofport(port))
+            #                                             self.int_br.get_datapath_id())
+            #                                 self.int_br.get_port_ofport(port))
             
             # try:
             #     details = self.plugin_rpc.get_device_details(self.context,

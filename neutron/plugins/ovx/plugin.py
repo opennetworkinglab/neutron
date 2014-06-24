@@ -259,7 +259,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Wait for agent to tell us
             
         # Plugin DB - Port Create and Return port
-        print 'NEUTRON_PORT', neutron_port
         return neutron_port
 
     def update_port(self, context, id, port):
