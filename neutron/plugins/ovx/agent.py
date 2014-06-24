@@ -76,7 +76,7 @@ class OVXNeutronAgent():
         # self.connection = agent_rpc.create_consumers(self.dispatcher, self.topic, consumers)
 
     def update_ports(self, registered_ports):
-        ports = selt.int_br.get_vif_port_set()
+        ports = self.int_br.get_vif_port_set()
         #ports = set(self.int_br.get_port_name_list())
         print 'PORTS', ports
         return ports - registered_ports
