@@ -20,7 +20,7 @@ from oslo.config import cfg
 from neutron.agent import rpc as agent_rpc
 from neutron.agent.linux import ovs_lib 
 from neutron.common import config as logging_config
-from neutron.common import rpc_compat
+#from neutron.common import rpc_compat
 from neutron.common import topics
 from neutron.openstack.common import log
 from neutron.openstack.common.rpc import dispatcher
@@ -31,10 +31,10 @@ LOG = log.getLogger(__name__)
 class OVXPluginApi(agent_rpc.PluginApi):
     pass
 
-class OVXRpcCallback(rpc_compat.RpcCallback):
-    def __init__(self, context, agent):
-        self.context = context
-        self.agent = agent
+# class OVXRpcCallback(rpc_compat.RpcCallback):
+#     def __init__(self, context, agent):
+#         self.context = context
+#         self.agent = agent
     
 class OVXNeutronAgent():
     def __init__(self, integration_bridge, root_helper, polling_interval):
