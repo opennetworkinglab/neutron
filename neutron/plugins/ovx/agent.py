@@ -93,7 +93,7 @@ class OVXNeutronAgent():
             print '=== PROCESSING ==='
             print port
             print self.int_br.get_datapath_id()
-            print self.port.ofport
+            print port.ofport
             print self.int_br.get_port_ofport(port)
             self.plugin_rpc.update_port(self.context, self.int_br.get_datapath_id(), self.int_br.get_port_ofport(port))
 
