@@ -24,7 +24,7 @@ def get_ovx_tenant_id(session, neutron_network_id):
     query = session.query(ovx_models.NetworkMapping)
     result = query.filter_by(neutron_network_id=neutron_network_id).first()
     if result:
-        print 'RESULT'
+        print 'RESULT', result
         result.get('ovx_tenant_id')
     else:
         print 'NO RESULT'
