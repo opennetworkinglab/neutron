@@ -31,4 +31,4 @@ class PortMapping(model_base.BASEV2):
                                 sa.ForeignKey('ports.id', ondelete="CASCADE"),
                                 primary_key=True)
     ovx_vdpid = sa.Column(sa.Integer, nullable=False)
-    ovx_port_number = sa.Column(sa.Integer, nullable=False)
+    ovx_vport = sa.Column(sa.Integer, nullable=False)

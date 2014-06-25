@@ -70,7 +70,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         if not port_db['device_owner'].startswith(port_prefix):
             # TODO: fail if no device_id given
             # assuming device_id is of form DPID/PORT_NUMBER
-            (dpid, port_number) = neutron_port['device_id'].split("/")
+            (dpid, port_number) = port_db['device_id'].split("/")
 
         (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
 
@@ -79,12 +79,12 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
         # Save mapping between Neutron port ID and OVX dpid and port number
-        ovxdb.add_ovx_port_number(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
+        ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
 
         # TODO: add support for non-bigswitch networks
         self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
 
-        ovxdb.set_port_status(q_const.PORT_STATUS_ACTIVE)          
+        ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)          
         
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):
@@ -272,11 +272,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Start or stop port as needed
         if req_state != db_state:
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, port_db['network_id'])
-            ovx_port_number = ovxdb.get_ovx_port_number(context.session, id)
+            (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
             if req_state:
-                self.ovx_client.startPort(ovx_tenant_id, config.VDPID, ovx_port_number)
+                self.ovx_client.startPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
             else:
-                self.ovx_client.stopPort(ovx_tenant_id, config.VDPID, ovx_port_number)
+                self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
         # Save port to db
         neutron_port = super(OVXNeutronPlugin, self).update_port(context, id, port)
@@ -297,9 +297,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Lookup OVX tenant ID and virtual port number to remove port
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
-            ovx_port_number = ovxdb.get_ovx_port_number(context.session, id)
+            (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
             try:
-                self.ovx_client.removePort(ovx_tenant_id, config.VDPID, ovx_port_number)
+                self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
             except Exception as e:
                 LOG.warn(_("Neutron OVX: delete vport failed: %s"), e)
 

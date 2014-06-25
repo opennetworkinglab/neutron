@@ -16,8 +16,6 @@
 from oslo.config import cfg
 from neutron.agent.common import config
 
-VDPID = 46200400562356225
-
 ovs_opts = [
     cfg.StrOpt('integration_bridge', default='br-int',
                help=_("Integration bridge to use")),

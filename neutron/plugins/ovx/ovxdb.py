@@ -27,23 +27,17 @@ def get_ovx_tenant_id(session, neutron_network_id):
     if result:
         return result.get('ovx_tenant_id')
 
-def add_ovx_port_number(session, neutron_port_id, ovx_vdpid, ovx_port_number):
-    ovx_port_number_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
+def add_ovx_vport(session, neutron_port_id, ovx_vdpid, ovx_vport):
+    ovx_vport_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
                                                      ovx_vdpid=ovx_vdpid,
-                                                     ovx_port_number=ovx_port_number)
-    session.add(ovx_port_number_mapping)
+                                                     ovx_vport=ovx_vport)
+    session.add(ovx_vport_mapping)
 
-def get_ovx_vdpid(session, neutron_port_id):
+def get_ovx_vport(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
     result = query.filter_by(neutron_port_id=neutron_port_id).first()
     if result:
-        return result.get('ovx_vdpid')
-    
-def get_ovx_port_number(session, neutron_port_id):
-    query = session.query(ovx_models.PortMapping)
-    result = query.filter_by(neutron_port_id=neutron_port_id).first()
-    if result:
-        return result.get('ovx_port_number')
+        return (result.get('ovx_vdpid'), result.get('ovx_vport'))
 
 def set_port_status(session, port_id, status):
     """Set the port status."""
