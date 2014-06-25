@@ -44,5 +44,5 @@ def set_port_status(session, port_id, status):
     query = session.query(models_v2.Port)
     result = query.filter_by(id=port_id).one()
     result['status'] = status
-    session.merge(port)
+    session.merge(result)
     session.flush()
