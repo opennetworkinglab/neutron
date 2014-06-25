@@ -20,8 +20,7 @@ This plugin will forward authenticated REST API calls to OVX.
 
 from oslo.config import cfg
 
-from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
-from neutron.common import constants as n_const
+from neutron.common import constants as q_const
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.db import agents_db
@@ -112,9 +111,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN}
         self.conn = rpc.create_connection(new=True)
-        self.agent_notifiers[q_const.AGENT_TYPE_DHCP] = (
-            dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
-        )
         self.callbacks = OVXRpcCallbacks(self)
         self.dispatcher = self.callbacks.create_rpc_dispatcher()
         for svc_topic in self.service_topics.values():
@@ -242,7 +238,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent
-            port['port']['status'] = n_const.PORT_STATUS_DOWN
+            port['port']['status'] = q_const.PORT_STATUS_DOWN
             
             # Plugin DB - Port Create and Return port
             neutron_port = super(OVXNeutronPlugin, self).create_port(context, port)
