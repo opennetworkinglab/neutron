@@ -66,11 +66,11 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         
         # # TODO: if nova is calling us: wait for agent, else assume the device_id contains the dpid & port
         # # based on nuage plugin
-        port_prefix = 'compute:'
-        if not port_db['device_owner'].startswith(port_prefix):
-            # TODO: fail if no device_id given
-            # assuming device_id is of form DPID/PORT_NUMBER
-            (dpid, port_number) = port_db['device_id'].split("/")
+        # port_prefix = 'compute:'
+        # if not port_db['device_owner'].startswith(port_prefix):
+        #     # TODO: fail if no device_id given
+        #     # assuming device_id is of form DPID/PORT_NUMBER
+        #     (dpid, port_number) = port_db['device_id'].split("/")
 
         (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
 
