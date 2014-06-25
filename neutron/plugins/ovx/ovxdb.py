@@ -29,7 +29,7 @@ def get_ovx_tenant_id(session, neutron_network_id):
 
 def add_ovx_port_number(session, neutron_port_id, ovx_vdpid, ovx_port_number):
     ovx_port_number_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
-                                                     ovx_vdpid=ovx_vdpid
+                                                     ovx_vdpid=ovx_vdpid,
                                                      ovx_port_number=ovx_port_number)
     session.add(ovx_port_number_mapping)
 
