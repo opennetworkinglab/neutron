@@ -62,7 +62,6 @@ class OVXNeutronAgent():
         self.agent_id = 'ovx-q-agent.%s' % self.host
         LOG.info(_("RPC agent_id: %s"), self.agent_id)
 
-        self.topic = topics.AGENT
         self.context = context.get_admin_context_without_session()
 
         self.plugin_rpc = OVXPluginApi(topics.PLUGIN)
@@ -108,7 +107,6 @@ class OVXNeutronAgent():
                 sync = False
 
             added_ports = self.update_ports(ports)
-            print '*** NEW PORTS', added_ports
             
             # notify plugin about port deltas
             if added_ports:
