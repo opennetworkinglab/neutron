@@ -53,7 +53,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         '''
         return q_rpc.PluginRpcDispatcher([self, agents_db.AgentExtRpcCallback()])
 
-    def update_port(self, rpc_context, **kwargs):
+    def update_ports(self, rpc_context, **kwargs):
         print '+++ CALL STARTED +++'
         LOG.debug(_("Call from agent received"))
         port_id = kwargs.get('port_id')

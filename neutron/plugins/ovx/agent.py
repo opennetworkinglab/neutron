@@ -31,15 +31,15 @@ from neutron.plugins.ovx.common import config
 LOG = log.getLogger(__name__)
 
 class OVXPluginApi(agent_rpc.PluginApi):
-    def update_port(self, context, port_id, dpid, port_number):
+    def update_ports(self, context, port_id, dpid, port_number):
         """RPC to update information of ports on Neutron Server."""
         print '+++ CALL STARTED +++'
         LOG.info(_("Update port"))
         self.call(context, self.make_msg('update_port',
+                                         topic=topics.AGENT,
                                          port_id=port_id,
                                          dpid=dpid,
-                                         port_number=port_number),
-                  topic=topics.AGENT)
+                                         port_number=port_number))
         print '+++ CALL FINISHED +++'
 
 # class OVXRpcCallback(rpc_compat.RpcCallback):
@@ -91,7 +91,7 @@ class OVXNeutronAgent():
             ovs_port = self.int_br.get_vif_port_by_id(port)
             port_id = ovs_port.vif_id
             port_number = ovs_port.ofport
-            self.plugin_rpc.update_port(self.context, port_id, self.dpid, port_number)
+            self.plugin_rpc.update_ports(self.context, port_id, self.dpid, port_number)
 
         return resync
 
