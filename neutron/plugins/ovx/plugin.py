@@ -58,13 +58,9 @@ class OVXRpcCallbacks():
         dpid = kwargs.get('dpid')
         port_number = kwargs.get('port_number')
 
-        print '=== RECEIVED UPDATE ===', port_id, dpid, port_number
-
         port_db = self.plugin.get_port(rpc_context, port_id)
         neutron_network_id = port_db['network_id']
-        print '=== BEFORE LOOKUP ===', ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
         ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
-        print '=== LOOKUP ===', neutron_network_id, ovx_tenant_id
         
         # # TODO: if nova is calling us: wait for agent, else assume the device_id contains the dpid & port
         # # based on nuage plugin

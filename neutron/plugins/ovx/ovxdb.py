@@ -24,10 +24,7 @@ def get_ovx_tenant_id(session, neutron_network_id):
     query = session.query(ovx_models.NetworkMapping)
     result = query.filter_by(neutron_network_id=neutron_network_id).first()
     if result:
-        print 'RESULT', result
-        result.get('ovx_tenant_id')
-    else:
-        print 'NO RESULT'
+        return result.get('ovx_tenant_id')
 
 def add_ovx_port_number(session, neutron_port_id, ovx_port_number):
     ovx_port_number_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
