@@ -87,8 +87,6 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
         ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
-        return port_db
-
         print '+++ CALL FININSHED +++'
         
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,

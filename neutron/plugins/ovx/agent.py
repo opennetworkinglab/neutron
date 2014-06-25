@@ -40,7 +40,7 @@ class OVXPluginApi(agent_rpc.PluginApi):
                                          port_id=port_id,
                                          dpid=dpid,
                                          port_number=port_number))
-        print '+++ CALL STARTED +++'
+        print '+++ CALL FINISHED +++'
 
 # class OVXRpcCallback(rpc_compat.RpcCallback):
 #     def __init__(self, context, agent):
