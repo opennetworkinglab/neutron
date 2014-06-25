@@ -86,9 +86,7 @@ class OVXNeutronAgent():
         for port in ports:
             LOG.debug(_("Port %s added"), port)
             
-            # TODO: port should already be connected - VERIFY!
-            # get dpid / port
-            # inform agent about port, also pass in device
+            # inform agent port is up
             ovs_port = self.int_br.get_vif_port_by_id(port)
             port_id = ovs_port.vif_id
             port_number = ovs_port.ofport

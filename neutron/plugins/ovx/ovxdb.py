@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.db import models_v2
 from neutron.plugins.ovx import ovx_models
 
 def add_ovx_tenant_id(session, neutron_network_id, ovx_tenant_id):
@@ -26,13 +27,28 @@ def get_ovx_tenant_id(session, neutron_network_id):
     if result:
         return result.get('ovx_tenant_id')
 
-def add_ovx_port_number(session, neutron_port_id, ovx_port_number):
+def add_ovx_port_number(session, neutron_port_id, ovx_vdpid, ovx_port_number):
     ovx_port_number_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
+                                                     ovx_vdpid=ovx_vdpid
                                                      ovx_port_number=ovx_port_number)
     session.add(ovx_port_number_mapping)
 
+def get_ovx_vdpid(session, neutron_port_id):
+    query = session.query(ovx_models.PortMapping)
+    result = query.filter_by(neutron_port_id=neutron_port_id).first()
+    if result:
+        return result.get('ovx_vdpid')
+    
 def get_ovx_port_number(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
     result = query.filter_by(neutron_port_id=neutron_port_id).first()
     if result:
         return result.get('ovx_port_number')
+
+def set_port_status(session, port_id, status):
+    """Set the port status."""
+    query = session.query(models_v2.Port)
+    result = query.filter_by(id=port_id).one()
+    result['status'] = status
+    session.merge(port)
+    session.flush()

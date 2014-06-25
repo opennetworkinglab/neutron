@@ -60,6 +60,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         port_number = kwargs.get('port_number')
 
         port_db = self.plugin.get_port(rpc_context, port_id)
+        
         neutron_network_id = port_db['network_id']
         ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
         
@@ -72,21 +73,23 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             (dpid, port_number) = neutron_port['device_id'].split("/")
 
         (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
-         
+
         # Stop port if requested (port is started by default in OVX)
         if not port_db['admin_state_up']:
             self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
-        # Save mapping between Neutron network ID and OVX tenant ID
-        ovxdb.add_ovx_port_number(rpc_context.session, port_db['id'], ovx_vport)
+        # Save mapping between Neutron port ID and OVX dpid and port number
+        ovxdb.add_ovx_port_number(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
 
         # TODO: add support for non-bigswitch networks
-        self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,  port_db['mac_address'])
+        self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
+
+        ovxdb.set_port_status(q_const.PORT_STATUS_ACTIVE)          
         
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):
 
-    supported_extension_aliases = ['quotas', 'binding']
+    supported_extension_aliases = ['quotas', 'binding', 'agent']
 
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
