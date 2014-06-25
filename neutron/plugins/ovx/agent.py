@@ -36,10 +36,11 @@ class OVXPluginApi(agent_rpc.PluginApi):
         print '+++ CALL STARTED +++'
         LOG.info(_("Update port"))
         self.call(context, self.make_msg('update_port',
-                                         topic=topics.AGENT,
                                          port_id=port_id,
                                          dpid=dpid,
-                                         port_number=port_number))
+                                         port_number=port_number),
+                  topic=topics.AGENT)
+                                         )
         print '+++ CALL FINISHED +++'
 
 # class OVXRpcCallback(rpc_compat.RpcCallback):
