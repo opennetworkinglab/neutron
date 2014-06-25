@@ -30,5 +30,5 @@ class PortMapping(model_base.BASEV2):
     neutron_port_id = sa.Column(sa.String(36),
                                 sa.ForeignKey('ports.id', ondelete="CASCADE"),
                                 primary_key=True)
-    ovx_vdpid = sa.Column(sa.Integer, nullable=False)
+    ovx_vdpid = sa.Column(sa.BigInteger, nullable=False)
     ovx_vport = sa.Column(sa.Integer, nullable=False)
