@@ -62,6 +62,7 @@ class OVXRpcCallbacks():
 
         port_db = self.plugin.get_port(rpc_context, port_id)
         neutron_network_id = port_db['network_id']
+        print '=== BEFORE LOOKUP ===', ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
         ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
         print '=== LOOKUP ===', neutron_network_id, ovx_tenant_id
         
