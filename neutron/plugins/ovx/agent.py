@@ -35,7 +35,7 @@ class OVXPluginApi(agent_rpc.PluginApi):
         """RPC to update information of ports on Neutron Server."""
         print '+++ CALL STARTED +++'
         LOG.info(_("Update port"))
-        return self.call(context, self.make_msg('update_port',
+        self.call(context, self.make_msg('update_port',
                                          topic=topics.AGENT,
                                          port_id=port_id,
                                          dpid=dpid,
