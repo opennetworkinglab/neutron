@@ -39,7 +39,7 @@ class OVXPluginApi(agent_rpc.PluginApi):
                                          topic=topics.AGENT,
                                          port_id=port_id,
                                          dpid=dpid,
-                                         port_number=port_number), timeout=)
+                                         port_number=port_number))
         print '+++ CALL FINISHED +++'
 
 # class OVXRpcCallback(rpc_compat.RpcCallback):
