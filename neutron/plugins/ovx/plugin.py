@@ -70,7 +70,7 @@ class OVXRpcCallbacks():
             # assuming device_id is of form DPID/PORT_NUMBER
             (dpid, port_number) = neutron_port['device_id'].split("/")
 
-        (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
+        (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(int(ovx_tenant_id), ovxlib.hexToLong(dpid), int(port_number))
          
         # Stop port if requested (port is started by default in OVX)
         if not db_port['admin_state_up']:
