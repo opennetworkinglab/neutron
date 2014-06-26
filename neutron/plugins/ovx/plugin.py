@@ -35,6 +35,7 @@ from neutron.plugins.common import constants as svc_constants
 from neutron.plugins.ovx import ovxlib
 from neutron.plugins.ovx import ovxdb
 from neutron.plugins.ovx.common import config
+from novaclient.client import Client as nova_client
 
 LOG = logging.getLogger(__name__)
 
@@ -98,6 +99,13 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         portbindings_base.register_port_dict_function()
 
         self.setup_rpc()
+
+        print '=== TESTING novaclient ==='
+        nt = nova_client.Client('admin', '2b7e61250b87c7eaed03',
+                                'service', 'http://172.16.212.128:5000/v2.0/',
+                                service_type="compute")
+        nt.flavors.list()
+        print '=== DONE TESTING novaclient ==='
 
     def setup_rpc(self):
         # RPC support
