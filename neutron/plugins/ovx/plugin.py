@@ -54,7 +54,6 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         return q_rpc.PluginRpcDispatcher([self, agents_db.AgentExtRpcCallback()])
 
     def update_ports(self, rpc_context, **kwargs):
-        print '+++ CALL STARTED +++'
         LOG.debug(_("Call from agent received"))
         port_id = kwargs.get('port_id')
         dpid = kwargs.get('dpid')
@@ -86,8 +85,6 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
 
         ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
-
-        print '+++ CALL FININSHED +++'
         
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):

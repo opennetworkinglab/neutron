@@ -33,14 +33,12 @@ LOG = log.getLogger(__name__)
 class OVXPluginApi(agent_rpc.PluginApi):
     def update_ports(self, context, port_id, dpid, port_number):
         """RPC to update information of ports on Neutron Server."""
-        print '+++ CALL STARTED +++'
         LOG.info(_("Update ports"))
         self.cast(context, self.make_msg('update_ports',
                                          topic=topics.AGENT,
                                          port_id=port_id,
                                          dpid=dpid,
                                          port_number=port_number))
-        print '+++ CALL FINISHED +++'
 
 # class OVXRpcCallback(rpc_compat.RpcCallback):
 #     def __init__(self, context, agent):
