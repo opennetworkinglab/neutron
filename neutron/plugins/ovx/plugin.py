@@ -101,9 +101,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.setup_rpc()
 
         print '=== TESTING novaclient ==='
-        nt = nova_client.Client('admin', '2b7e61250b87c7eaed03',
-                                'service', 'http://172.16.212.128:5000/v2.0/',
-                                service_type="compute")
+        nt = nova_client('admin', '2b7e61250b87c7eaed03',
+                         'service', 'http://172.16.212.128:5000/v2.0/',
+                         service_type="compute")
         nt.flavors.list()
         print '=== DONE TESTING novaclient ==='
 
