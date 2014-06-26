@@ -40,11 +40,6 @@ class OVXPluginApi(agent_rpc.PluginApi):
                                          dpid=dpid,
                                          port_number=port_number))
 
-# class OVXRpcCallback(rpc_compat.RpcCallback):
-#     def __init__(self, context, agent):
-#         self.context = context
-#         self.agent = agent
-    
 class OVXNeutronAgent():
     def __init__(self, integration_bridge, root_helper, polling_interval):
         LOG.exception(_("Started OVX Neutron Agent"))
@@ -67,13 +62,6 @@ class OVXNeutronAgent():
         self.plugin_rpc = OVXPluginApi(topics.PLUGIN)
         # not doing state_rpc for now
         #self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
-
-        # # RPC network init
-        # self.callback = OVXRpcCallback(self.context, self)
-        # self.dispatcher = dispatcher.RpcDispatcher([self.callback])
-
-        # consumers = [[topics.PORT, topics.UPDATE]]
-        # self.connection = agent_rpc.create_consumers(self.dispatcher, self.topic, consumers)
 
     def update_ports(self, registered_ports):
         ports = self.int_br.get_vif_port_set()

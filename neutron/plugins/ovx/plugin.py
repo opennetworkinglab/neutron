@@ -64,15 +64,9 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         neutron_network_id = port_db['network_id']
         ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
         
-        # # TODO: if nova is calling us: wait for agent, else assume the device_id contains the dpid & port
-        # # based on nuage plugin
-        # port_prefix = 'compute:'
-        # if not port_db['device_owner'].startswith(port_prefix):
-        #     # TODO: fail if no device_id given
-        #     # assuming device_id is of form DPID/PORT_NUMBER
-        #     (dpid, port_number) = port_db['device_id'].split("/")
-
-        (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
+        (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id,
+                                                                   ovxlib.hexToLong(dpid),
+                                                                   int(port_number))
 
         # Stop port if requested (port is started by default in OVX)
         if not port_db['admin_state_up']:
@@ -84,6 +78,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         # TODO: add support for non-bigswitch networks
         self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
 
+        # Set port in active state
         ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
         
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
@@ -99,12 +94,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.p = 10000
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS
-            # portbindings.VIF_DETAILS: {
-            #     # TODO(rkukura): Replace with new VIF security details
-            #     portbindings.CAP_PORT_FILTER:
-            #     'security-group' in self.supported_extension_aliases,
-            #     portbindings.OVS_HYBRID_PLUG: True
-            # }
         }
         portbindings_base.register_port_dict_function()
 
@@ -129,14 +118,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             net_db = super(OVXNeutronPlugin, self).get_network(
                 context, subnet['subnet']['network_id'], fields=None)
             
-            # # Reserve the last IP address for the gateway
-            # # if it is not defined
-            # s = subnet['subnet']
-            # ipnet = netaddr.IPNetwork(s['cidr'])
-            # if s['gateway_ip'] is attributes.ATTR_NOT_SPECIFIED:
-            #     gw_ip = str(netaddr.IPAddress(ipnet.last - 1))
-            #     subnet['subnet']['gateway_ip'] = gw_ip
-
             sub_db = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
 
         return sub_db
