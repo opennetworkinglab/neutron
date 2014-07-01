@@ -27,7 +27,6 @@ from neutron.db import agents_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import dhcp_rpc_base
 from neutron.db import portbindings_base
-from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
@@ -45,7 +44,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
     def __init__(self, plugin):
         self.plugin = plugin
-    
+
     def create_rpc_dispatcher(self):
         '''Get the rpc dispatcher for this manager.
 
@@ -61,10 +60,11 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         port_number = kwargs.get('port_number')
 
         port_db = self.plugin.get_port(rpc_context, port_id)
-        
+
         neutron_network_id = port_db['network_id']
-        ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
-        
+        ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session,
+                                                neutron_network_id)
+
         (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id,
                                                                    ovxlib.hexToLong(dpid),
                                                                    int(port_number))
@@ -74,14 +74,16 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
         # Save mapping between Neutron port ID and OVX dpid and port number
-        ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
+        ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid,
+                            ovx_vport)
 
         # TODO: add support for non-bigswitch networks
-        self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
+        self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,
+                                           port_db['mac_address'])
 
         # Set port in active state
         ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
-        
+
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):
 
@@ -90,7 +92,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
         self.conf = cfg.CONF.OVX
-        self.ovx_client = ovxlib.OVXClient(self.conf.host, self.conf.port, self.conf.username, self.conf.password)
+        self.ovx_client = ovxlib.OVXClient(self.conf.host, self.conf.port,
+                                           self.conf.username, self.conf.password)
         # TODO: add controller spawning
         self.p = 10000
         self.base_binding_dict = {
@@ -101,7 +104,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.setup_rpc()
 
         nt = nova_client('admin', '2b7e61250b87c7eaed03',
-                         'service', 'http://172.16.212.128:5000/v2.0/',
+                         'admin', 'http://172.16.212.128:5000/v2.0/',
                          service_type="compute")
 
     def setup_rpc(self):
@@ -128,21 +131,12 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return sub_db
 
     def create_network(self, context, network):
-        """Create a network.
+        """Create Neutron network.
 
-        Create a network, which represents an L2 network segment which
-        can have a set of subnets and ports associated with it.
-
-        :param context: neutron api request context
-        :param network: dictionary describing the network, with keys
-                        as listed in the  :obj:`RESOURCE_ATTRIBUTE_MAP` object
-                        in :file:`neutron/api/v2/attributes.py`.  All keys will
-                        be populated.
-
+        Creates an OVX-based virtual network.
         """
         LOG.debug(_('Neutron OVX: create_network() called'))
 
-        # Plugin DB - Network Create and validation
         with context.session.begin(subtransactions=True):
             # Save in db
             net = super(OVXNeutronPlugin, self).create_network(context, network)
@@ -156,7 +150,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             num_backup = 1
             
             # TODO: exception handling
-            ovx_tenant_id = self._do_big_switch_network(ctrls, subnet, routing, num_backup)
+            try:
+                ovx_tenant_id = self._do_big_switch_network(ctrls, subnet, routing, num_backup)
+
+            except Exception as exc:
+                raise
 
             # Start network if requested
             if net['admin_state_up']:
@@ -292,37 +290,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
 
-    def start_rpc_listener(self):
-        """Start the rpc listener.
-
-        Most plugins start an RPC listener implicitly on initialization.  In
-        order to support multiple process RPC, the plugin needs to expose
-        control over when this is started.
-
-        .. note:: this method is optional, as it was not part of the originally
-                  defined plugin API.
-        """
-        raise NotImplementedError
-
-    def rpc_workers_supported(self):
-        """Return whether the plugin supports multiple RPC workers.
-
-        A plugin that supports multiple RPC workers should override the
-        start_rpc_listener method to ensure that this method returns True and
-        that start_rpc_listener is called at the appropriate time.
-        Alternately, a plugin can override this method to customize detection
-        of support for multiple rpc workers
-
-        .. note:: this method is optional, as it was not part of the originally
-                  defined plugin API.
-        """
-        return (self.__class__.start_rpc_listener !=
-                OVXNeutronPlugin.start_rpc_listener)
-
     def _do_big_switch_network(self, ctrls, subnet, routing, num_backup):
         """Create OVX network that is a single big switch"""
         
         # request physical topology
+        raise Exception("just testing")
         phy_topo = self.ovx_client.getPhysicalTopology()
         # split subnet in netaddress and netmask
         (net_address, net_mask) = subnet.split('/')
