@@ -21,16 +21,6 @@ from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
-class OVXException(Exception):
-    def __init__(self, code, msg, tenantId, rollback=False):
-        self.code = code
-        self.msg = msg
-        self.rollback = rollback
-        self.tenantId = tenantId
-
-    def __str__(self):
-        return 'ovxlib: %s (%s)' % (self.msg, self.code)
-
 def hexToLong(h):
     """Convert dotted hex to long value."""
     return int(h.replace(':', ''), 16)
@@ -67,7 +57,6 @@ class OVXClient():
         j = json.loads(data)
         if 'error' in j:
             msg = '%s (%s)' % (j['error']['message'], j['error']['code'])
-            LOG.error(msg)
             raise Exception(msg)
         return j['result']
 
@@ -81,41 +70,37 @@ class OVXClient():
             req = self._build_request(data, url, cmd)
             ph = opener.open(req)
             return self._parse_response(ph.read())
-        except urllib2.URLError as e:
-            LOG.error(e)
+        except Exception:
             raise
-        except urllib2.HTTPError as e:
-            if e.code == 401:
-                LOG.error("Authentication failed: invalid password")
-                LOG.error("TESTING: %s", e)
-            elif e.code == 504:
-                LOG.error("HTTP Error 504: Gateway timeout")
-            else:
-                LOG.error(e)
-            raise e
-        except RuntimeError as e:
-            LOG.error(e)
-            raise e
+        # except urllib2.URLError as e:
+        #     raise
+        # except urllib2.HTTPError as e:
+        #     if e.code == 401:
+        #         LOG.error("Authentication failed: invalid password")
+        #     elif e.code == 504:
+        #         LOG.error("HTTP Error 504: Gateway timeout")
+        #     else:
+        #         LOG.error(e)
+        #     raise e
+        # except RuntimeError as e:
+        #     LOG.error(e)
+        #     raise e
 
     def createNetwork(self, ctrls, net_address, net_mask):
         req = {'controllerUrls': ctrls, 
                'networkAddress': net_address, 'mask': net_mask}
-        try:
-            ret = self._connect("createNetwork", self.tenant_url, data=req)
-            tenantId = ret.get('tenantId')
-            if tenantId:
-                LOG.info("Network with tenantId %s has been created" % tenantId)
-            return tenantId
-        except OVXException as e:
-            LOG.error(e)
-            raise Exception(e)
+        ret = self._connect("createNetwork", self.tenant_url, data=req)
+        tenantId = ret.get('tenantId')
+        if tenantId:
+            LOG.info("Network with tenantId %s has been created" % tenantId)
+        return tenantId
 
     def removeNetwork(self, tenantId):
         req = {'tenantId': tenantId}
         try:
             ret = self._connect("removeNetwork", self.tenant_url, data=req)
             LOG.info("Network with tenantId %s has been removed" % tenantId)
-        except OVXException as e:
+        except Exception as e:
             e.rollback = False
             raise
         
@@ -129,7 +114,7 @@ class OVXClient():
             if switchId:
                 LOG.info("Switch with switchId %s has been created" % longToHex(switchId))
             return switchId
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -143,7 +128,7 @@ class OVXClient():
             if switchId and portId:
                 LOG.info("Port on switch %s with port number %s has been created" % (longToHex(switchId), portId))
             return (switchId, portId)
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -153,7 +138,7 @@ class OVXClient():
         try:
             ret = self._connect("removePort", self.tenant_url, data=req)
             LOG.info("Virtual port for tenantId %s on virtual dpid %s and virtual port number %s has been removed" % (tenantId, vdpid, vport))
-        except OVXException as e:
+        except Exception as e:
             e.rollback = False
             raise
         
@@ -165,7 +150,7 @@ class OVXClient():
             if linkId:
                 LOG.info("Link with linkId %s has been created" % linkId)
             return linkId
-        except OVXException as e:
+        except Exception as e:
               e.rollback = True
               e.tenantId = tenantId
               raise
@@ -177,7 +162,7 @@ class OVXClient():
             if ret:
                 LOG.info("Path on link %s has been set" % linkId)
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -190,7 +175,7 @@ class OVXClient():
             if hostId:
                 LOG.info("Host with hostId %s connected" % hostId)
             return hostId
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -203,7 +188,7 @@ class OVXClient():
             if routeId:
                 LOG.info("Route with routeId %s on switch %s between ports (%s,%s) created" % (routeId, switchId, srcPort, dstPort))
             return routeId
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -215,7 +200,7 @@ class OVXClient():
             if ret:
                 LOG.info("Route on switch %s between ports (%s,%s) created" % (switchId, srcPort, dstPort))
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -227,7 +212,7 @@ class OVXClient():
             if ret:
                 LOG.info("Network with tenantId %s has been started" % tenantId)
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -239,7 +224,7 @@ class OVXClient():
             if ret:
                 LOG.info("Network with tenantId %s has been stopped" % tenantId)
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -251,7 +236,7 @@ class OVXClient():
             if ret:
                 LOG.info("Port on network with tenantId %s, virtual switch id %s, and virtual port number %s has been started" % (tenantId, longToHex(vdpid), vport))
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -263,7 +248,7 @@ class OVXClient():
             if ret:
                 LOG.info("Port on network with tenantId %s, virtual switch id %s, and virtual port number %s has been stopped" % (tenantId, longToHex(vdpid), vport))
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise
@@ -274,7 +259,7 @@ class OVXClient():
             if ret:
                 LOG.info("Physical network topology received")
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = False
             raise
 
@@ -285,7 +270,7 @@ class OVXClient():
             if ret:
                 LOG.info("Internal routing of switch %s has been set to %s" % (longToHex(vdpid), algorithm))
             return ret
-        except OVXException as e:
+        except Exception as e:
             e.rollback = True
             e.tenantId = tenantId
             raise

@@ -66,24 +66,21 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session,
                                                 neutron_network_id)
 
-        (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id,
-                                                                   ovxlib.hexToLong(dpid),
-                                                                   int(port_number))
+        with context.session.begin(subtransactions=True):
+            (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
 
-        # Stop port if requested (port is started by default in OVX)
-        if not port_db['admin_state_up']:
-            self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+            # Stop port if requested (port is started by default in OVX)
+            if not port_db['admin_state_up']:
+                self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
-        # Save mapping between Neutron port ID and OVX dpid and port number
-        ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid,
-                            ovx_vport)
+            # Save mapping between Neutron port ID and OVX dpid and port number
+            ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
 
-        # TODO: add support for non-bigswitch networks
-        self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport,
-                                           port_db['mac_address'])
+            # TODO: add support for non-bigswitch networks
+            self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
 
-        # Set port in active state
-        ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
+            # Set port in active state
+            ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        portbindings_base.PortBindingBaseMixin):
@@ -119,22 +116,12 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
-    def create_subnet(self, context, subnet):
-        LOG.debug(_("Neutron OVX: create_subnet() called"))
-
-        with context.session.begin(subtransactions=True):
-            # Plugin DB - Subnet Create
-            net_db = super(OVXNeutronPlugin, self).get_network(
-                context, subnet['subnet']['network_id'], fields=None)
-            
-            sub_db = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
-
-        return sub_db
-
     def create_network(self, context, network):
-        """Create Neutron network.
+        """Creates an OVX-based virtual network.
 
-        Creates an OVX-based virtual network.
+        The virtual network is a big switch composed out of all physical switches (this
+        includes both software and hardware switches) that are connected to OVX.
+        An image that is running an OpenFlow controller is spawned for the virtual network.
         """
         LOG.debug(_('Neutron OVX: create_network() called'))
 
@@ -146,17 +133,13 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             ctrls = ['tcp:192.168.56.6:%s' % (self.p)]
             self.p += 10000
             subnet = '10.0.0.0/24'
-            routing = 'spf'
-            num_backup = 1
             
             # TODO: exception handling
             try:
-                ovx_tenant_id = self._do_big_switch_network(ctrls, subnet, routing, num_backup)
-
+                ovx_tenant_id = self._do_big_switch_network(ctrls, subnet)
                 # Start network if requested
                 if net['admin_state_up']:
                     self.ovx_client.startNetwork(ovx_tenant_id)
-
             except Exception as exc:
                 raise
 
@@ -290,20 +273,48 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
 
-    def _do_big_switch_network(self, ctrls, subnet, routing, num_backup):
-        """Create OVX network that is a single big switch"""
+    def create_subnet(self, context, subnet):
+        LOG.debug(_("Neutron OVX: create_subnet() called"))
+
+        with context.session.begin(subtransactions=True):
+            # Plugin DB - Subnet Create
+            net_db = super(OVXNeutronPlugin, self).get_network(
+                context, subnet['subnet']['network_id'], fields=None)
+            
+            sub_db = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
+
+        return sub_db
+
+    def _do_big_switch_network(self, ctrls, subnet, routing='spf', num_backup=1):
+        """Create virtual network in OVX that is a single big switch.
+
+        If any steps faill during network creation, no virtual network will be created."""
         
-        # request physical topology
-        phy_topo = self.ovx_client.getPhysicalTopology()
-        # split subnet in netaddress and netmask
+        # Split subnet in network address and netmask
         (net_address, net_mask) = subnet.split('/')
-        # create virtual network
-        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
-        # create virtual switch with all physical dpids
-        dpids = [ovxlib.hexToLong(dpid) for dpid in phy_topo['switches']]
-        vdpid = self.ovx_client.createSwitch(tenant_id, dpids)
-        # set routing algorithm and number of backups
-        if (len(dpids) > 1):
-            self.ovx_client.setInternalRouting(tenant_id, vdpid, routing, num_backup)
+
+        # Request physical topology and create virtual network
+        try:
+            phy_topo = self.ovx_client.getPhysicalTopology()
+            tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
+        except Exception:
+            raise
+
+        # Fail if there are no physical switches
+        switches = phy_topo.get('switches')
+        if switches == None:
+            raise Exception("Cannot create virtual network without physical switches")
+
+        # Create big switch, remote virtual network if something went wrong
+        try:
+            # create virtual switch with all physical dpids
+            dpids = [ovxlib.hexToLong(dpid) for dpid in switches]
+            vdpid = self.ovx_client.createSwitch(tenant_id, dpids)
+            # set routing algorithm and number of backups
+            if (len(dpids) > 1):
+                self.ovx_client.setInternalRouting(tenant_id, vdpid, routing, num_backup)
+        except Exception:
+            self.ovx_client.removeNetwork(tenant_id)
+            raise
 
         return tenant_id
