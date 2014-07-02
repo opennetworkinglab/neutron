@@ -61,7 +61,6 @@ class OVXClient():
         return j['result']
 
     def _connect(self, cmd, url, data=None):
-        LOG.debug("%s: %s" % (cmd, data))
         try:
             passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
             passman.add_password(None, url, self.user, self.password)
@@ -70,8 +69,8 @@ class OVXClient():
             req = self._build_request(data, url, cmd)
             ph = opener.open(req)
             return self._parse_response(ph.read())
-        except Exception:
-            raise
+        except Exception as e:
+            raise Exception("OVX connection error (%s)" % e)
         # except urllib2.URLError as e:
         #     raise
         # except urllib2.HTTPError as e:

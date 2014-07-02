@@ -134,13 +134,12 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self.p += 10000
             subnet = '10.0.0.0/24'
             
-            # TODO: exception handling
             try:
                 ovx_tenant_id = self._do_big_switch_network(ctrls, subnet)
                 # Start network if requested
                 if net['admin_state_up']:
                     self.ovx_client.startNetwork(ovx_tenant_id)
-            except Exception as exc:
+            except Exception:
                 raise
 
             # Save mapping between Neutron network ID and OVX tenant ID
