@@ -21,13 +21,6 @@ from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
-class ERROR_CODE:
-    PARSE_ERROR = -32700          # Invalid JSON was received by the server.
-    INVALID_REQ = -32600          # The JSON sent is not a valid Request object.
-    METHOD_NOT_FOUND = -32601     # The method does not exist / is not available.
-    INVALID_PARAMS = -32602       # Invalid method parameter(s).
-    INTERNAL_ERROR = -32603	      # Internal JSON-RPC error.
-
 class OVXException(Exception):
     def __init__(self, code, msg, tenantId, rollback=False):
         self.code = code
@@ -36,22 +29,14 @@ class OVXException(Exception):
         self.tenantId = tenantId
 
     def __str__(self):
-        return '%s (%s)' % (self.msg, self.code)
+        return 'ovxlib: %s (%s)' % (self.msg, self.code)
 
-class EmbedderException(Exception):
-    def __init__(self, code, msg):
-        self.code = code
-        self.msg = msg
-
-    def __str__(self):
-        return '%s (%s)' % (self.msg, self.code)
-
-# Convert dotted hex to long value
 def hexToLong(h):
+    """Convert dotted hex to long value."""
     return int(h.replace(':', ''), 16)
 
-# Convert long value to dotted hex value with specified length in bytes
 def longToHex(l, length=8):
+    """Convert long value to dotted hex value with specified length in bytes."""
     h = ("%x" % l)
     if len(h) % 2 != 0:
         h = '0' + h
@@ -60,6 +45,8 @@ def longToHex(l, length=8):
     return prefix + result
 
 class OVXClient():
+    """Implements a client for the OpenVirteX API."""
+    
     def __init__(self, host, port, user, password):
         self.host = host
         self.port = port
@@ -69,44 +56,46 @@ class OVXClient():
         self.tenant_url = self.base_url + 'tenant'
         self.status_url = self.base_url + 'status'
         
-    def _buildRequest(self, data, url, cmd):
+    def _build_request(self, data, url, cmd):
         j = { "id" : "ovxlib", "method" : cmd, "jsonrpc" : "2.0" }
         h = {"Content-Type" : "application/json"}
         if data is not None:
             j['params'] = data
         return urllib2.Request(url, json.dumps(j), h)
 
-    def _parseResponse(self, data):
+    def _parse_response(self, data):
         j = json.loads(data)
         if 'error' in j:
-            e = OVXException(j['error']['code'], j['error']['message'], -1)
-            log.error(e)
-            raise e
+            msg = '%s (%s)' % (j['error']['message'], j['error']['code'])
+            LOG.error(msg)
+            raise Exception(msg)
         return j['result']
 
     def _connect(self, cmd, url, data=None):
-        log.debug("%s: %s" % (cmd, data))
+        LOG.debug("%s: %s" % (cmd, data))
         try:
             passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
             passman.add_password(None, url, self.user, self.password)
             authhandler = urllib2.HTTPBasicAuthHandler(passman)
             opener = urllib2.build_opener(authhandler)
-            req = self._buildRequest(data, url, cmd)
+            req = self._build_request(data, url, cmd)
             ph = opener.open(req)
-            return self._parseResponse(ph.read())
+            return self._parse_response(ph.read())
         except urllib2.URLError as e:
-            log.error(e)
+            LOG.error(e)
+            raise
         except urllib2.HTTPError as e:
             if e.code == 401:
-                log.error("Authentication failed: invalid password")
-                print "Authentication failed: invalid password"
+                LOG.error("Authentication failed: invalid password")
+                LOG.error("TESTING: %s", e)
             elif e.code == 504:
-                log.error("HTTP Error 504: Gateway timeout")
-                print "HTTP Error 504: Gateway timeout"
+                LOG.error("HTTP Error 504: Gateway timeout")
             else:
-                log.error(e)
+                LOG.error(e)
+            raise e
         except RuntimeError as e:
-            log.error(e)
+            LOG.error(e)
+            raise e
 
     def createNetwork(self, ctrls, net_address, net_mask):
         req = {'controllerUrls': ctrls, 
@@ -115,17 +104,17 @@ class OVXClient():
             ret = self._connect("createNetwork", self.tenant_url, data=req)
             tenantId = ret.get('tenantId')
             if tenantId:
-                log.info("Network with tenantId %s has been created" % tenantId)
+                LOG.info("Network with tenantId %s has been created" % tenantId)
             return tenantId
         except OVXException as e:
-            e.rollback = False
-            raise
+            LOG.error(e)
+            raise Exception(e)
 
     def removeNetwork(self, tenantId):
         req = {'tenantId': tenantId}
         try:
             ret = self._connect("removeNetwork", self.tenant_url, data=req)
-            log.info("Network with tenantId %s has been removed" % tenantId)
+            LOG.info("Network with tenantId %s has been removed" % tenantId)
         except OVXException as e:
             e.rollback = False
             raise
@@ -138,7 +127,7 @@ class OVXClient():
             ret = self._connect("createSwitch", self.tenant_url, data=req)
             switchId = ret.get('vdpid')
             if switchId:
-                log.info("Switch with switchId %s has been created" % longToHex(switchId))
+                LOG.info("Switch with switchId %s has been created" % longToHex(switchId))
             return switchId
         except OVXException as e:
             e.rollback = True
@@ -152,7 +141,7 @@ class OVXClient():
             switchId = ret.get('vdpid')
             portId = ret.get('vport')
             if switchId and portId:
-                log.info("Port on switch %s with port number %s has been created" % (longToHex(switchId), portId))
+                LOG.info("Port on switch %s with port number %s has been created" % (longToHex(switchId), portId))
             return (switchId, portId)
         except OVXException as e:
             e.rollback = True
@@ -163,7 +152,7 @@ class OVXClient():
         req = {'tenantId': tenantId, 'vdpid': vdpid, 'vport': vport}
         try:
             ret = self._connect("removePort", self.tenant_url, data=req)
-            log.info("Virtual port for tenantId %s on virtual dpid %s and virtual port number %s has been removed" % (tenantId, vdpid, vport))
+            LOG.info("Virtual port for tenantId %s on virtual dpid %s and virtual port number %s has been removed" % (tenantId, vdpid, vport))
         except OVXException as e:
             e.rollback = False
             raise
@@ -174,7 +163,7 @@ class OVXClient():
             ret = self._connect("connectLink", self.tenant_url, data=req)
             linkId = ret.get('linkId')
             if linkId:
-                log.info("Link with linkId %s has been created" % linkId)
+                LOG.info("Link with linkId %s has been created" % linkId)
             return linkId
         except OVXException as e:
               e.rollback = True
@@ -186,7 +175,7 @@ class OVXClient():
         try:
             ret = self._connect("setLinkPath", self.tenant_url, data=req)
             if ret:
-                log.info("Path on link %s has been set" % linkId)
+                LOG.info("Path on link %s has been set" % linkId)
             return ret
         except OVXException as e:
             e.rollback = True
@@ -199,7 +188,7 @@ class OVXClient():
             ret = self._connect("connectHost", self.tenant_url, data=req)
             hostId = ret.get('hostId')
             if hostId:
-                log.info("Host with hostId %s connected" % hostId)
+                LOG.info("Host with hostId %s connected" % hostId)
             return hostId
         except OVXException as e:
             e.rollback = True
@@ -212,7 +201,7 @@ class OVXClient():
             ret = self._connect("connectRoute", self.tenant_url, data=req)
             routeId = reg.get('routeId')
             if routeId:
-                log.info("Route with routeId %s on switch %s between ports (%s,%s) created" % (routeId, switchId, srcPort, dstPort))
+                LOG.info("Route with routeId %s on switch %s between ports (%s,%s) created" % (routeId, switchId, srcPort, dstPort))
             return routeId
         except OVXException as e:
             e.rollback = True
@@ -224,7 +213,7 @@ class OVXClient():
         try:
             ret = self._connect("createSwitchRoute", self.tenant_url, data=req)
             if ret:
-                log.info("Route on switch %s between ports (%s,%s) created" % (switchId, srcPort, dstPort))
+                LOG.info("Route on switch %s between ports (%s,%s) created" % (switchId, srcPort, dstPort))
             return ret
         except OVXException as e:
             e.rollback = True
@@ -236,7 +225,7 @@ class OVXClient():
         try:
             ret = self._connect("startNetwork", self.tenant_url, data=req)
             if ret:
-                log.info("Network with tenantId %s has been started" % tenantId)
+                LOG.info("Network with tenantId %s has been started" % tenantId)
             return ret
         except OVXException as e:
             e.rollback = True
@@ -248,7 +237,7 @@ class OVXClient():
         try:
             ret = self._connect("stopNetwork", self.tenant_url, data=req)
             if ret:
-                log.info("Network with tenantId %s has been stopped" % tenantId)
+                LOG.info("Network with tenantId %s has been stopped" % tenantId)
             return ret
         except OVXException as e:
             e.rollback = True
@@ -260,7 +249,7 @@ class OVXClient():
         try:
             ret = self._connect("startPort", self.tenant_url, data=req)
             if ret:
-                log.info("Port on network with tenantId %s, virtual switch id %s, and virtual port number %s has been started" % (tenantId, longToHex(vdpid), vport))
+                LOG.info("Port on network with tenantId %s, virtual switch id %s, and virtual port number %s has been started" % (tenantId, longToHex(vdpid), vport))
             return ret
         except OVXException as e:
             e.rollback = True
@@ -272,7 +261,7 @@ class OVXClient():
         try:
             ret = self._connect("stopPort", self.tenant_url, data=req)
             if ret:
-                log.info("Port on network with tenantId %s, virtual switch id %s, and virtual port number %s has been stopped" % (tenantId, longToHex(vdpid), vport))
+                LOG.info("Port on network with tenantId %s, virtual switch id %s, and virtual port number %s has been stopped" % (tenantId, longToHex(vdpid), vport))
             return ret
         except OVXException as e:
             e.rollback = True
@@ -283,7 +272,7 @@ class OVXClient():
         ret = self._connect("getPhysicalTopology", self.status_url)
         try:
             if ret:
-                log.info("Physical network topology received")
+                LOG.info("Physical network topology received")
             return ret
         except OVXException as e:
             e.rollback = False
@@ -294,7 +283,7 @@ class OVXClient():
         try:
             ret = self._connect("setInternalRouting", self.tenant_url, data=req)
             if ret:
-                log.info("Internal routing of switch %s has been set to %s" % (longToHex(vdpid), algorithm))
+                LOG.info("Internal routing of switch %s has been set to %s" % (longToHex(vdpid), algorithm))
             return ret
         except OVXException as e:
             e.rollback = True
