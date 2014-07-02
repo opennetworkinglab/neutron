@@ -142,7 +142,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             net = super(OVXNeutronPlugin, self).create_network(context, network)
 
             # TODO: spawn controller
-            # TODO: parametrize
             ctrls = ['tcp:192.168.56.6:%s' % (self.p)]
             self.p += 10000
             subnet = '10.0.0.0/24'
@@ -294,7 +293,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """Create OVX network that is a single big switch"""
         
         # request physical topology
-        raise Exception("just testing")
         phy_topo = self.ovx_client.getPhysicalTopology()
         # split subnet in netaddress and netmask
         (net_address, net_mask) = subnet.split('/')

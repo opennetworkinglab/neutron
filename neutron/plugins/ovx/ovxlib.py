@@ -14,24 +14,12 @@
 #    under the License.
 
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
-import sys
 import json
-import threading
-import logging as log
 import urllib2
-import subprocess
-import time
 
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
-
-CLONE_VM = '/usr/bin/VBoxManage clonevm OVX --snapshot Master --mode machine --options link --name %s --register'
-GET_IP_VM = '/usr/bin/VBoxManage guestcontrol %s execute --image /home/ovx/get-ip.sh --wait-exit --username ovx --password ovx --wait-stdout -- eth0'
-START_VM = '/usr/bin/VBoxManage startvm %s --type headless'
-#START_VM = '/usr/bin/VBoxManage startvm %s'
-STOP_VM = '/usr/bin/VBoxManage controlvm %s poweroff'
-UNREGISTER_VM = '/usr/bin/VBoxManage unregistervm %s --delete'
 
 class ERROR_CODE:
     PARSE_ERROR = -32700          # Invalid JSON was received by the server.
@@ -107,25 +95,17 @@ class OVXClient():
             ph = opener.open(req)
             return self._parseResponse(ph.read())
         except urllib2.URLError as e:
-            print e
             log.error(e)
-            sys.exit(1)
         except urllib2.HTTPError as e:
             if e.code == 401:
                 log.error("Authentication failed: invalid password")
                 print "Authentication failed: invalid password"
-                # TODO
-                sys.exit(1)
             elif e.code == 504:
                 log.error("HTTP Error 504: Gateway timeout")
                 print "HTTP Error 504: Gateway timeout"
-                # TODO
-                sys.exit(1)
             else:
-                print e
                 log.error(e)
         except RuntimeError as e:
-            print e
             log.error(e)
 
     def createNetwork(self, ctrls, net_address, net_mask):
@@ -513,39 +493,3 @@ class OVXEmbedderHandler(BaseHTTPRequestHandler):
         result = method(json_id, params)
 
         reply(result)
-
-class OVXEmbedderServer(HTTPServer):
-    def __init__(self, opts):
-        HTTPServer.__init__(self, (opts['host'], opts['port']), OVXEmbedderHandler)
-        self.client = OVXClient(opts['ovxhost'], opts['ovxport'], opts['ovxuser'], opts['ovxpass'])
-        self.ctrlProto = opts['ctrlproto']
-        self.ctrlPort = opts['ctrlport']
-        self.controllers = []
-
-    def _spawnController(self):
-        ctrl = "OVX-%s" % len(self.controllers)
-        devnull = open('/dev/null', 'w')
-        log.info("Spawning controller VM %s" % ctrl)
-        clone_cmd = CLONE_VM % ctrl
-        subprocess.call(clone_cmd.split(), stdout=devnull, stderr=devnull)
-        start_cmd = START_VM % ctrl
-        subprocess.call(start_cmd.split(), stdout=devnull, stderr=devnull)
-        get_ip_cmd = GET_IP_VM % ctrl
-        while True:
-            try:
-                ret = subprocess.check_output(get_ip_cmd.split(), stderr=devnull)
-            except subprocess.CalledProcessError:
-                time.sleep(1)
-                continue
-            ip = ret
-            break
-        self.controllers.append(ctrl)
-        log.info("Controller %s ready on %s" % (ctrl, ip))
-        return ip
-    
-    def closeControllers(self):
-        for controller in self.controllers:
-            stop_cmd = STOP_VM % controller
-            subprocess.call(stop_cmd.split())
-            del_cmd = UNREGISTER_VM % controller
-            subprocess.call(del_cmd.split())
