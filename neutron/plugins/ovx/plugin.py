@@ -27,6 +27,7 @@ from neutron.db import agents_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import dhcp_rpc_base
 from neutron.db import portbindings_base
+from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
@@ -152,12 +153,12 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             try:
                 ovx_tenant_id = self._do_big_switch_network(ctrls, subnet, routing, num_backup)
 
+                # Start network if requested
+                if net['admin_state_up']:
+                    self.ovx_client.startNetwork(ovx_tenant_id)
+
             except Exception as exc:
                 raise
-
-            # Start network if requested
-            if net['admin_state_up']:
-                self.ovx_client.startNetwork(ovx_tenant_id)
 
             # Save mapping between Neutron network ID and OVX tenant ID
             ovxdb.add_ovx_tenant_id(context.session, net['id'], ovx_tenant_id)
