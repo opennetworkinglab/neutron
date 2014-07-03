@@ -106,8 +106,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.setup_rpc()
 
         self.conf_nova = cfg.CONF.NOVA
-        nt = nova_client(self.conf_nova.username, self.conf_nova.password,
-                         self.conf_nova.project_id, self.conf_nova.auth_url,
+        nt = nova_client(username=self.conf_nova.username, api_key=self.conf_nova.password,
+                         project_id=self.conf_nova.project_id, auth_url=self.conf_nova.auth_url,
                          service_type="compute")
 
     def setup_rpc(self):
