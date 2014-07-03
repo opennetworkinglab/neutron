@@ -60,13 +60,16 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         dpid = kwargs.get('dpid')
         port_number = kwargs.get('port_number')
 
-        port_db = self.plugin.get_port(rpc_context, port_id)
-
-        neutron_network_id = port_db['network_id']
-        ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session,
-                                                neutron_network_id)
-
         with rpc_context.session.begin(subtransactions=True):
+            # Lookup port
+            port_db = self.plugin.get_port(rpc_context, port_id)
+
+            # Lookup OVX tenant ID
+            neutron_network_id = port_db['network_id']
+            ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session,
+                                                    neutron_network_id)
+
+            # Create OVX port
             (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
 
             # Stop port if requested (port is started by default in OVX)
@@ -79,7 +82,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             # Register host in OVX
             self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
 
-            # Set port in active state
+            # Set port in active state in db
             ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
@@ -90,9 +93,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
-        self.conf = cfg.CONF.OVX
-        self.ovx_client = ovxlib.OVXClient(self.conf.host, self.conf.port,
-                                           self.conf.username, self.conf.password)
+        self.conf_ovx = cfg.CONF.OVX
+        self.ovx_client = ovxlib.OVXClient(self.conf_ovx.host, self.conf_ovx.port,
+                                           self.conf_ovx.username, self.conf_ovx.password)
         # TODO: add controller spawning
         self.p = 10000
         self.base_binding_dict = {
@@ -102,8 +105,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         self.setup_rpc()
 
-        nt = nova_client('admin', '2b7e61250b87c7eaed03',
-                         'admin', 'http://172.16.212.128:5000/v2.0/',
+        self.conf_nova = cfg.CONF.NOVA
+        nt = nova_client(self.conf_nova.username, self.conf_nova.password,
+                         self.conf_nova.project_id, self.conf_nova.auth_url,
                          service_type="compute")
 
     def setup_rpc(self):

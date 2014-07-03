@@ -16,6 +16,19 @@
 from oslo.config import cfg
 from neutron.agent.common import config
 
+agent_opts = [
+    cfg.IntOpt('polling_interval', default=2,
+               help=_("The number of seconds the agent will wait between "
+                      "polling for local device changes."))
+]
+
+nova_opts = [
+    cfg.StrOpt('username', default='admin', help=_('Nova username.')),
+    cfg.IntOpt('password', default='', help=_('Nova password.')),
+    cfg.IntOpt('project_id', default='admin', help=_('Nova project ID.')),
+    cfg.IntOpt('auth_url', default='http://localhost:5000/v2.0/', help=_('Nova authentication URL.')),
+]
+
 ovs_opts = [
     cfg.StrOpt('integration_bridge', default='br-int',
                help=_("Integration bridge to use")),
@@ -28,14 +41,9 @@ ovx_opts = [
     cfg.StrOpt('password', default='', help=_('OVX admin passord.')),
 ]
 
-agent_opts = [
-    cfg.IntOpt('polling_interval', default=2,
-               help=_("The number of seconds the agent will wait between "
-                      "polling for local device changes."))
-]
-    
-cfg.CONF.register_opts(ovx_opts, 'OVX')
 cfg.CONF.register_opts(agent_opts, 'AGENT')
+cfg.CONF.register_opts(nova_opts, 'NOVA')
 cfg.CONF.register_opts(ovs_opts, "OVS")
+cfg.CONF.register_opts(ovx_opts, 'OVX')
 config.register_agent_state_opts_helper(cfg.CONF)
 config.register_root_helper(cfg.CONF)
