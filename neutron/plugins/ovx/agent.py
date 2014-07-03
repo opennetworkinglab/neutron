@@ -52,7 +52,7 @@ class OVXNeutronAgent():
 
         self.agent_state = {
             'binary': 'neutron-ovx-agent',
-            'host': config.CONF.host,
+            'host': cfg.CONF.host,
             'topic': q_const.L2_AGENT_TOPIC,
             'configurations': {},
             'agent_type': "OpenVirteX agent",
