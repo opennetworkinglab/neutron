@@ -55,7 +55,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         return q_rpc.PluginRpcDispatcher([self, agents_db.AgentExtRpcCallback()])
 
     def update_ports(self, rpc_context, **kwargs):
-        LOG.debug(_("Call from agent received"))
+        LOG.debug(_("Agent has port updates"))
         port_id = kwargs.get('port_id')
         dpid = kwargs.get('dpid')
         port_number = kwargs.get('port_number')
@@ -66,7 +66,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session,
                                                 neutron_network_id)
 
-        with context.session.begin(subtransactions=True):
+        with rpc_context.session.begin(subtransactions=True):
             (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
 
             # Stop port if requested (port is started by default in OVX)
@@ -76,7 +76,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             # Save mapping between Neutron port ID and OVX dpid and port number
             ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
 
-            # TODO: add support for non-bigswitch networks
+            # Register host in OVX
             self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
 
             # Set port in active state
@@ -277,29 +277,26 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def _do_big_switch_network(self, ctrls, subnet, routing='spf', num_backup=1):
         """Create virtual network in OVX that is a single big switch.
 
-        If any steps faill during network creation, no virtual network will be created."""
+        If any step fails during network creation, no virtual network will be created."""
         
         # Split subnet in network address and netmask
         (net_address, net_mask) = subnet.split('/')
 
         # Request physical topology and create virtual network
-        try:
-            phy_topo = self.ovx_client.getPhysicalTopology()
-            tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
-        except Exception:
-            raise
+        phy_topo = self.ovx_client.getPhysicalTopology()
+        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
 
         # Fail if there are no physical switches
         switches = phy_topo.get('switches')
         if switches == None:
             raise Exception("Cannot create virtual network without physical switches")
 
-        # Create big switch, remote virtual network if something went wrong
+        # Create big switch, remove virtual network if something went wrong
         try:
-            # create virtual switch with all physical dpids
+            # Create virtual switch with all physical dpids
             dpids = [ovxlib.hexToLong(dpid) for dpid in switches]
             vdpid = self.ovx_client.createSwitch(tenant_id, dpids)
-            # set routing algorithm and number of backups
+            # Set routing algorithm and number of backups
             if (len(dpids) > 1):
                 self.ovx_client.setInternalRouting(tenant_id, vdpid, routing, num_backup)
         except Exception:
