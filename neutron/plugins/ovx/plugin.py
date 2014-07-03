@@ -123,8 +123,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         includes both software and hardware switches) that are connected to OVX.
         An image that is running an OpenFlow controller is spawned for the virtual network.
         """
-        LOG.debug(_('Neutron OVX: create_network() called'))
-
         with context.session.begin(subtransactions=True):
             # Save in db
             net = super(OVXNeutronPlugin, self).create_network(context, network)
@@ -181,8 +179,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param context: neutron api request context
         :param id: UUID representing the network to delete.
         """
-        LOG.debug(_("Neutron OVX: delete_network() called"))
-
         with context.session.begin(subtransactions=True):
             # Lookup OVX tenant ID
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
@@ -203,8 +199,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      :file:`neutron/api/v2/attributes.py`.  All keys will be
                      populated.
         """
-        LOG.debug(_("Neutron OVX: create_port() called"))
-
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent
             port['port']['status'] = q_const.PORT_STATUS_DOWN
@@ -257,8 +251,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param context: neutron api request context
         :param id: UUID representing the port to delete.
         """
-        LOG.debug(_("Neutron OVX: delete_port() called"))
-
         with context.session.begin(subtransactions=True):
             # Lookup OVX tenant ID and virtual port number to remove port
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
@@ -273,8 +265,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             super(OVXNeutronPlugin, self).delete_port(context, id)
 
     def create_subnet(self, context, subnet):
-        LOG.debug(_("Neutron OVX: create_subnet() called"))
-
         with context.session.begin(subtransactions=True):
             # Plugin DB - Subnet Create
             net_db = super(OVXNeutronPlugin, self).get_network(
