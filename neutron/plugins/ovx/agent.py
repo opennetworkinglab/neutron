@@ -22,7 +22,6 @@ from neutron.agent import rpc as agent_rpc
 from neutron.agent.linux import ovs_lib 
 from neutron.common import config as logging_config
 from neutron.common import utils
-#from neutron.common import rpc_compat
 from neutron.common import topics
 from neutron.openstack.common import log
 from neutron.openstack.common.rpc import dispatcher
@@ -73,7 +72,7 @@ class OVXNeutronAgent():
         for port in ports:
             LOG.debug(_("Port %s added"), port)
             
-            # inform agent port is up
+            # Inform plugin that port is up
             ovs_port = self.int_br.get_vif_port_by_id(port)
             port_id = ovs_port.vif_id
             port_number = ovs_port.ofport
@@ -96,14 +95,14 @@ class OVXNeutronAgent():
 
             added_ports = self.update_ports(ports)
             
-            # notify plugin about port deltas
+            # Notify plugin about port deltas
             if added_ports:
                 LOG.debug(_("Agent loop has new ports!"))
                 # If process ports fails, we should resync with plugin
                 sync = self.process_ports(added_ports)
                 ports = ports | added_ports
                     
-            # sleep till end of polling interval
+            # Sleep till end of polling interval
             elapsed = (time.time() - start)
             if (elapsed < self.polling_interval):
                 time.sleep(self.polling_interval - elapsed)
