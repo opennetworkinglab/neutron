@@ -83,6 +83,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
+                       agents_db.AgentDbMixin,
                        portbindings_base.PortBindingBaseMixin):
 
     supported_extension_aliases = ['quotas', 'binding', 'agent']
