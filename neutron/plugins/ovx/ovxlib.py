@@ -69,8 +69,8 @@ class OVXClient():
             req = self._build_request(data, url, cmd)
             ph = opener.open(req)
             return self._parse_response(ph.read())
-        except Exception as e:
-            raise Exception("OVX connection error (%s)" % e)
+        except Exception:
+            raise Exception("OVX connection error")
         # except urllib2.URLError as e:
         #     raise
         # except urllib2.HTTPError as e:
