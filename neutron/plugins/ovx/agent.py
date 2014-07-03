@@ -21,6 +21,7 @@ from neutron import context
 from neutron.agent import rpc as agent_rpc
 from neutron.agent.linux import ovs_lib 
 from neutron.common import config as logging_config
+from neutron.common import constants as q_const
 from neutron.common import utils
 from neutron.common import topics
 from neutron.openstack.common import log
@@ -41,7 +42,7 @@ class OVXPluginApi(agent_rpc.PluginApi):
 
 class OVXNeutronAgent():
     def __init__(self, integration_bridge, root_helper, polling_interval):
-        LOG.exception(_("Started OVX Neutron Agent"))
+        LOG.info(_("Started OVX Neutron Agent"))
         # Lookup integration bridge
         self.int_br = ovs_lib.OVSBridge(integration_bridge, root_helper)
         
@@ -49,6 +50,14 @@ class OVXNeutronAgent():
         self.polling_interval = polling_interval
         self.dpid = self.int_br.get_datapath_id()
 
+        self.agent_state = {
+            'binary': 'neutron-ovx-agent',
+            'host': config.CONF.host,
+            'topic': q_const.L2_AGENT_TOPIC,
+            'configurations': {},
+            'agent_type': "OpenVirteX agent",
+            'start_flag': True}
+        
         self.setup_rpc()
 
     def setup_rpc(self):
@@ -59,9 +68,18 @@ class OVXNeutronAgent():
         self.context = context.get_admin_context_without_session()
 
         self.plugin_rpc = OVXPluginApi(topics.PLUGIN)
-        # not doing state_rpc for now
-        #self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
+        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
 
+    def _report_state(self):
+        try:
+            # How many devices are likely used by a VM
+            num_devices = len(self.int_br.get_port_name_list())
+            self.agent_state['configurations']['devices'] = num_devices
+            self.state_rpc.report_state(self.context, self.agent_state)
+            self.agent_state.pop('start_flag', None)
+        except Exception:
+            LOG.error(_("Failed reporting state!"))
+            
     def update_ports(self, registered_ports):
         ports = self.int_br.get_vif_port_set()
         return ports - registered_ports
