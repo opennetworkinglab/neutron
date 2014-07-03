@@ -24,9 +24,9 @@ agent_opts = [
 
 nova_opts = [
     cfg.StrOpt('username', default='admin', help=_('Nova username.')),
-    cfg.IntOpt('password', default='', help=_('Nova password.')),
-    cfg.IntOpt('project_id', default='admin', help=_('Nova project ID.')),
-    cfg.IntOpt('auth_url', default='http://localhost:5000/v2.0/', help=_('Nova authentication URL.')),
+    cfg.StrOpt('password', default='', help=_('Nova password.')),
+    cfg.StrOpt('project_id', default='admin', help=_('Nova project ID.')),
+    cfg.StrOpt('auth_url', default='http://localhost:5000/v2.0/', help=_('Nova authentication URL.')),
 ]
 
 ovs_opts = [
