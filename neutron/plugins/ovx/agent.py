@@ -25,6 +25,7 @@ from neutron.common import constants as q_const
 from neutron.common import utils
 from neutron.common import topics
 from neutron.openstack.common import log
+from neutron.openstack.common import loopingcall
 from neutron.openstack.common.rpc import dispatcher
 from neutron.plugins.ovx.common import config
 
@@ -70,9 +71,13 @@ class OVXNeutronAgent():
         self.plugin_rpc = OVXPluginApi(topics.PLUGIN)
         self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
 
+        report_interval = cfg.CONF.AGENT.report_interval
+        if report_interval:
+            heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
+            heartbeat.start(interval=report_interval)        
+
     def _report_state(self):
         try:
-            # How many devices are likely used by a VM
             num_devices = len(self.int_br.get_port_name_list())
             self.agent_state['configurations']['devices'] = num_devices
             self.state_rpc.report_state(self.context, self.agent_state)
