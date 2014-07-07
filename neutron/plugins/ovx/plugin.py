@@ -137,13 +137,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self.p += 10000
             subnet = '10.0.0.0/24'
             
-            try:
-                ovx_tenant_id = self._do_big_switch_network(ctrls, subnet)
-                # Start network if requested
-                if net['admin_state_up']:
-                    self.ovx_client.startNetwork(ovx_tenant_id)
-            except Exception:
-                raise
+            ovx_tenant_id = self._do_big_switch_network(ctrls, subnet)
+            # Start network if requested
+            if net['admin_state_up']:
+                self.ovx_client.startNetwork(ovx_tenant_id)
 
             # Save mapping between Neutron network ID and OVX tenant ID
             ovxdb.add_ovx_tenant_id(context.session, net['id'], ovx_tenant_id)
@@ -261,10 +258,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
             (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
-            try:
-                self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
-            except Exception as e:
-                LOG.warn(_("Neutron OVX: delete vport failed: %s"), e)
+            self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)

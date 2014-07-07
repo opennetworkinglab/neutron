@@ -27,6 +27,7 @@ nova_opts = [
     cfg.StrOpt('password', default='', help=_('Nova password.')),
     cfg.StrOpt('project_id', default='admin', help=_('Nova project ID (name, not the tenant ID given by a UUID).')),
     cfg.StrOpt('auth_url', default='http://localhost:5000/v2.0/', help=_('Nova authentication URL.')),
+    cfg.StrOpt('ctrl_image', default='f23b3fbe-3440-42b4-bbaf-4be4f0d0cb71', help=_('Default SDN controller image ID.')),
 ]
 
 ovs_opts = [

@@ -68,89 +68,79 @@ class OVXClient():
             opener = urllib2.build_opener(authhandler)
             req = self._build_request(data, url, cmd)
             ph = opener.open(req)
-            return self._parse_response(ph.read())
+            response = self._parse_response(ph.read())
+            LOG.info("%s: REQ %s RET %s" % (cmd, data, response))
+            return response
         except Exception as e:
-            raise Exception("OVX connection error: %s" % e)
+            msg = "OVX connection error: %s" % e
+            LOG.error(msg)
+            raise Exception(msg)
 
     def createNetwork(self, ctrls, net_address, net_mask):
         req = {'controllerUrls': ctrls, 
                'networkAddress': net_address, 'mask': net_mask}
         ret = self._connect("createNetwork", self.tenant_url, data=req)
-        LOG.info("createNetwork: REQ %s RET %s" % (req, ret))
         return ret.get('tenantId')
 
     def removeNetwork(self, tenantId):
         req = {'tenantId': tenantId}
         ret = self._connect("removeNetwork", self.tenant_url, data=req)
-        LOG.info("removeNetwork: REQ %s RET %s" % (req, ret))
         
     def createSwitch(self, tenantId, dpids, dpid=None):
         req = {'tenantId': tenantId, 'dpids': dpids}
         if dpid:
             req["vdpid"] = dpid
         ret = self._connect("createSwitch", self.tenant_url, data=req)
-        LOG.info("createSwitch: REQ %s RET %s" % (req, ret))
         return ret.get('vdpid')
 
     def createPort(self, tenantId, dpid, port):
         req = {'tenantId': tenantId, 'dpid': dpid, 'port': port}
         ret = self._connect("createPort", self.tenant_url, data=req)
-        LOG.info("createPort: REQ %s RET %s" % (req, ret))
         return (ret.get('vdpid'), ret.get('vport'))
 
     def removePort(self, tenantId, vdpid, vport):
         req = {'tenantId': tenantId, 'vdpid': vdpid, 'vport': vport}
         ret = self._connect("removePort", self.tenant_url, data=req)
-        LOG.info("removePort: REQ %s RET %s" % (req, ret))
         
     def connectLink(self, tenantId, srcDpid, srcPort, dstDpid, dstPort, algorithm, backup_num):
         req = {'tenantId': tenantId, 'srcDpid': srcDpid, 'srcPort': srcPort, 'dstDpid': dstDpid, 'dstPort': dstPort, 'algorithm': algorithm, 'backup_num': backup_num}
         ret = self._connect("connectLink", self.tenant_url, data=req)
-        LOG.info("connectLink: REQ %s RET %s" % (req, ret))
         return ret.get('linkId')
 
     def setLinkPath(self, tenantId, linkId, path, priority):
         req = {'tenantId': tenantId, 'linkId': linkId, 'path': path, 'priority': priority}
         ret = self._connect("setLinkPath", self.tenant_url, data=req)
-        LOG.info("setLinkPath: REQ %s RET %s" % (req, ret))
         
     def connectHost(self, tenantId, vdpid, vport, mac):
         req = {'tenantId': tenantId, 'vdpid': vdpid, 'vport': vport, 'mac': mac}
         ret = self._connect("connectHost", self.tenant_url, data=req)
         hostId = ret.get('hostId')
-        LOG.info("connectHost: REQ %s RET %s" % (req, ret))
         return ret.get('hostId')
             
     def connectRoute(self, tenantId, switchId, srcPort, dstPort, path):
         req = {'tenantId': tenantId, 'vdpid': switchId, 'srcPort': srcPort, 'dstPort': dstPort, 'path': path}
         ret = self._connect("connectRoute", self.tenant_url, data=req)
-        LOG.info("connectRoute: REQ %s RET %s" % (req, ret))
         return reg.get('routeId')
         
     def createSwitchRoute(self, tenantId, switchId, srcPort, dstPort, path):
         req = {'tenantId': tenantId, 'dpid': switchId, 'srcPort': srcPort, 'dstPort': dstPort, 'path': path}
         ret = self._connect("createSwitchRoute", self.tenant_url, data=req)
-        LOG.info("createSwitchRoute: REQ %s RET %s" % (req, ret))
 
     def startNetwork(self, tenantId):
         req = {'tenantId': tenantId}
         ret = self._connect("startNetwork", self.tenant_url, data=req)
-        LOG.info("startNetwork: REQ %s RET %s" % (req, ret))
 
     def stopNetwork(self, tenantId):
         req = {'tenantId': tenantId}
         ret = self._connect("stopNetwork", self.tenant_url, data=req)
-        LOG.info("stopNetwork: REQ %s RET %s" % (req, ret))
         
     def startPort(self, tenantId, vdpid, vport):
         req = {'tenantId': tenantId, 'vdpid': vdpid, 'vport': vport}
         ret = self._connect("startPort", self.tenant_url, data=req)
-        LOG.info("connectRoute: REQ %s RET %s" % (req, ret))
 
     def stopPort(self, tenantId, vdpid, vport):
         req = {'tenantId': tenantId, 'vdpid': vdpid, 'vport': vport}
         ret = self._connect("stopPort", self.tenant_url, data=req)
-        LOG.info("stopPort: REQ %s RET %s" % (req, ret))
         
     def getPhysicalTopology(self):
         ret = self._connect("getPhysicalTopology", self.status_url)
@@ -160,4 +150,3 @@ class OVXClient():
     def setInternalRouting(self, tenantId, vdpid, algorithm, backup_num):
         req = {'tenantId': tenantId, 'vdpid': vdpid, 'algorithm': algorithm, 'backup_num': backup_num}
         ret = self._connect("setInternalRouting", self.tenant_url, data=req)
-        LOG.info("setInternalRouting: REQ %s RET %s" % (req, ret))
