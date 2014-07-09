@@ -93,22 +93,31 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
+        # Initialize OVX client API
         self.conf_ovx = cfg.CONF.OVX
         self.ovx_client = ovxlib.OVXClient(self.conf_ovx.host, self.conf_ovx.port,
                                            self.conf_ovx.username, self.conf_ovx.password)
         # TODO: add controller spawning
         self.p = 10000
+        # Init port bindings
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS
         }
         portbindings_base.register_port_dict_function()
-
+        # Init RPC
         self.setup_rpc()
-
+        # Nova bindings for default controller spawning
         self.conf_nova = cfg.CONF.NOVA
-        self.nt = nova_client(username=self.conf_nova.username, api_key=self.conf_nova.password,
-                            project_id=self.conf_nova.project_id, auth_url=self.conf_nova.auth_url,
-                            service_type="compute")
+        self.nova = nova_client(username=self.conf_nova.username, api_key=self.conf_nova.password,
+                                project_id=self.conf_nova.project_id, auth_url=self.conf_nova.auth_url,
+                                service_type="compute")
+        try:
+            self.image = self.nova.images.find(name=self.conf_nova.image_name)
+            self.flavor = self.nova.flavors.find(name=self.conf_nova.flavor)
+            self.network = self.nova.networks.find(label=self.conf_nova.network)
+        except Exception as e:
+            LOG.error("Could not initialize Nova bindings. Check your config.")
+            sys.exit(1)
 
     def setup_rpc(self):
         # RPC support
@@ -132,18 +141,20 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Save in db
             net = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            # TODO: spawn controller
-            ctrls = ['tcp:192.168.56.6:%s' % (self.p)]
-            self.p += 10000
+            controller = self._spawn_controller()
+            
+            ip = controller.addresses[self.network.id][0]['addr']
+            ctrl = 'tcp:%s:%s' % (ip, self.conf_nova.image_port)
+            # Subnet value is irrelevant to OVX
             subnet = '10.0.0.0/24'
             
-            ovx_tenant_id = self._do_big_switch_network(ctrls, subnet)
+            ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
             # Start network if requested
             if net['admin_state_up']:
                 self.ovx_client.startNetwork(ovx_tenant_id)
 
             # Save mapping between Neutron network ID and OVX tenant ID
-            ovxdb.add_ovx_tenant_id(context.session, net['id'], ovx_tenant_id)
+            ovxdb.add_ovx_network(context.session, net['id'], ovx_tenant_id, controller.id)
 
         # Return created network
         return net
@@ -185,6 +196,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Lookup OVX tenant ID
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
             self.ovx_client.removeNetwork(ovx_tenant_id)
+
+            # Lookup server ID of OpenFlow controller
+            ovx_controller = ovxdb.get_ovx_controller(context.session, id)
+            # TODO:
+            self._destroy_controller(ovx_controller)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_network(context, id)
@@ -254,11 +270,14 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param id: UUID representing the port to delete.
         """
         with context.session.begin(subtransactions=True):
-            # Lookup OVX tenant ID and virtual port number to remove port
+            # Lookup OVX tenant ID, virtual dpid and virtual port number
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
             (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
-            self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+            try:
+                self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+            except ovxlib.OVXException:
+                LOG.warn("Could not remove port. Probably because physical port was already removed."
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
@@ -273,11 +292,16 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return sub_db
 
-    def _do_big_switch_network(self, ctrls, subnet, routing='spf', num_backup=1):
+    def _do_big_switch_network(self, ctrl, subnet, routing='spf', num_backup=1):
         """Create virtual network in OVX that is a single big switch.
 
         If any step fails during network creation, no virtual network will be created."""
-        
+
+        if isinstance(ctrl, list):
+            ctrls = ctrl
+        else:
+            ctrls = [ctrl]
+
         # Split subnet in network address and netmask
         (net_address, net_mask) = subnet.split('/')
 
@@ -303,3 +327,15 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             raise
 
         return tenant_id
+
+    def _start_controller(self):
+        """Spawn OpenFlow controller and return the server handle."""
+        server = self.nova.servers.create(name='OVX-%s' % net['id'],
+                                          image=self.image,
+                                          flavor=self.flavor,
+                                          nics=[{'net-id': self.network.id}])
+        return server
+
+    def _stop_controller(self, controller):
+        """Destroy OpenFlow controller running on the given server handle."""
+        self.nova.servers.delete(controller)

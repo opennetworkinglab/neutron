@@ -34,6 +34,14 @@ def longToHex(l, length=8):
     prefix = '00:' * (length - (len(h) / 2) - (len(h) % 2))
     return prefix + result
 
+class OVXException(Exception):
+    def __init__(self, code, msg):
+        self.code = code
+        self.msg = msg
+
+    def __str__(self):
+        return '%s (%s)' % (self.msg, self.code)
+
 class OVXClient():
     """Implements a client for the OpenVirteX API."""
     
@@ -56,25 +64,18 @@ class OVXClient():
     def _parse_response(self, data):
         j = json.loads(data)
         if 'error' in j:
-            msg = '%s (%s)' % (j['error']['message'], j['error']['code'])
-            raise Exception(msg)
+            raise OVXException(j['error']['code'], j['error']['message'])
         return j['result']
 
     def _connect(self, cmd, url, data=None):
-        try:
-            passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
-            passman.add_password(None, url, self.user, self.password)
-            authhandler = urllib2.HTTPBasicAuthHandler(passman)
-            opener = urllib2.build_opener(authhandler)
-            req = self._build_request(data, url, cmd)
-            ph = opener.open(req)
-            response = self._parse_response(ph.read())
-            LOG.info("%s: REQ %s RET %s" % (cmd, data, response))
-            return response
-        except Exception as e:
-            msg = "OVX connection error: %s" % e
-            LOG.error(msg)
-            raise Exception(msg)
+        passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+        passman.add_password(None, url, self.user, self.password)
+        authhandler = urllib2.HTTPBasicAuthHandler(passman)
+        opener = urllib2.build_opener(authhandler)
+        req = self._build_request(data, url, cmd)
+        ph = opener.open(req)
+        response = self._parse_response(ph.read())
+        return response
 
     def createNetwork(self, ctrls, net_address, net_mask):
         req = {'controllerUrls': ctrls, 

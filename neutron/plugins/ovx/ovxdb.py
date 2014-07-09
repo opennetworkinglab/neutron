@@ -16,16 +16,23 @@
 from neutron.db import models_v2
 from neutron.plugins.ovx import ovx_models
 
-def add_ovx_tenant_id(session, neutron_network_id, ovx_tenant_id):
-    ovx_tenant_id_mapping = ovx_models.NetworkMapping(neutron_network_id=neutron_network_id,
-                                                      ovx_tenant_id=ovx_tenant_id)
-    session.add(ovx_tenant_id_mapping)
+def add_ovx_network(session, neutron_network_id, ovx_tenant_id, ovx_controller):
+    ovx_network_mapping = ovx_models.NetworkMapping(neutron_network_id=neutron_network_id,
+                                                    ovx_tenant_id=ovx_tenant_id,
+                                                    ovx_controller=ovx_controller)
+    session.add(ovx_tenant_network_mapping)
 
 def get_ovx_tenant_id(session, neutron_network_id):
     query = session.query(ovx_models.NetworkMapping)
     result = query.filter_by(neutron_network_id=neutron_network_id).first()
     if result:
         return result.get('ovx_tenant_id')
+
+def get_ovx_controller(session, neutron_network_id):
+    query = session.query(ovx_models.NetworkMapping)
+    result = query.filter_by(neutron_network_id=neutron_network_id).first()
+    if result:
+        return result.get('ovx_controller')
 
 def add_ovx_vport(session, neutron_port_id, ovx_vdpid, ovx_vport):
     ovx_vport_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,

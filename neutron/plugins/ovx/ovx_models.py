@@ -17,12 +17,15 @@ import sqlalchemy as sa
 from neutron.db import model_base
 
 class NetworkMapping(model_base.BASEV2):
-    """Neutron network ID <-> OVX tenant ID mapping."""
+    """Neutron network ID <-> OVX tenant ID & controller server ID.
+
+    Supports only a single controller."""
     __tablename__ = 'ovx_networks'
     neutron_network_id = sa.Column(sa.String(36),
                                    sa.ForeignKey('networks.id', ondelete="CASCADE"),
                                    primary_key=True)
     ovx_tenant_id = sa.Column(sa.Integer, nullable=False)
+    ovx_controller = sa.Column(sa.String(36), nullable=False)
 
 class PortMapping(model_base.BASEV2):
     """Neutron port ID <-> OVX virtual port number mapping."""
