@@ -277,7 +277,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             try:
                 self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
             except ovxlib.OVXException:
-                LOG.warn("Could not remove port. Probably because physical port was already removed."
+                LOG.warn("Could not remove port. Probably because physical port was already removed.")
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
