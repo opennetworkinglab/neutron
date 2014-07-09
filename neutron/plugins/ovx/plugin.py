@@ -18,6 +18,8 @@ Neutron Plug-in for OpenVirteX Network Virtualization Platform.
 This plugin will forward authenticated REST API calls to OVX.
 """
 
+import sys
+
 from oslo.config import cfg
 
 from neutron.common import constants as q_const
