@@ -88,9 +88,10 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
 class ControllerManager():
-    """Simple manager for SDN controllers. Spawns a VM for each requested controller."""
+    """Simple manager for SDN controllers. Spawns a VM for each requested controller inside
+    the specified virtual network."""
     def __init__(self):
-        # Nova bindings for default controller spawning
+        # Nova config for default controllers
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
                                 service_type="compute")
@@ -102,8 +103,9 @@ class ControllerManager():
             sys.exit(1)
 
     def spawn(self, network_id):
-        """Spawns SDN controller for the virtual network identified by Neutron network ID.
+        """Spawns SDN controller inside the virtual network identified by Neutron network ID.
         Returns the Nova server ID and IP address."""
+        # TODO: make name unique
         server = self._nova.servers.create(name='OVX-%s' % network_id,
                                            image=self._image,
                                            flavor=self._flavor,
@@ -136,6 +138,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.setup_rpc()
         # Controller manager
         self.ctrl_manager = ControllerManager()
+        # Virtual network and subnet for SDN controllers
+        #self.ctrl_network = self._create_ctrl_network()
+        #self.ctrl_subnet = self._create_ctrl_subnet()
 
     def setup_rpc(self):
         # RPC support
@@ -155,13 +160,15 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         includes both software and hardware switches) that are connected to OVX.
         An image that is running an OpenFlow controller is spawned for the virtual network.
         """
+        LOG.info("=== CREATE NETWORK === " + network)
         with context.session.begin(subtransactions=True):
             # Save in db
             net = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            (controller_id, controller_ip) = self.ctrl_manager.spawn(net['id'])
+            #(controller_id, controller_ip) = self.ctrl_manager.spawn(self.ctrl_network.id)
             
-            ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
+            #ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
+            ctrl = 'tcp:192.168.56.6:10000'
             # Subnet value is irrelevant to OVX
             subnet = '10.0.0.0/24'
             
@@ -171,6 +178,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 self.ovx_client.startNetwork(ovx_tenant_id)
 
             # Save mapping between Neutron network ID and OVX tenant ID
+            controller_id = '550e8400-e29b-41d4-a716-446655440000'
             ovxdb.add_ovx_network(context.session, net['id'], ovx_tenant_id, controller_id)
 
         # Return created network
@@ -216,7 +224,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             # Lookup server ID of OpenFlow controller
             ovx_controller = ovxdb.get_ovx_controller(context.session, id)
-            self.ctrl_manager.delete(ovx_controller)
+            #self.ctrl_manager.delete(ovx_controller)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_network(context, id)
@@ -349,16 +357,18 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return tenant_id
 
-    def _create_controller_network(self):
+    def _create_ctrl_network(self, context):
+        """Creates OVX-based virtual network in which default SDN controllers will run."""
+        network = {}
+        network['network'] = {}
+        network['network']['name'] = 'OVX-root'
         with context.session.begin(subtransactions=True):
-            network = 
             # Save in db
             net = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            controller = self._start_controller()
+            (controller_id, controller_ip) = self.ctrl_manager.spawn(self.ctrl_network.id)
             
-            ip = controller.addresses[self.network.id][0]['addr']
-            ctrl = 'tcp:%s:%s' % (ip, self.conf_nova.image_port)
+            ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
             # Subnet value is irrelevant to OVX
             subnet = '10.0.0.0/24'
             
@@ -368,4 +378,18 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 self.ovx_client.startNetwork(ovx_tenant_id)
 
             # Save mapping between Neutron network ID and OVX tenant ID
-            ovxdb.add_ovx_network(context.session, net['id'], ovx_tenant_id, controller.id)
+            ovxdb.add_ovx_network(context.session, net['id'], ovx_tenant_id, controller_id)
+
+        # Return created network
+        return net
+    
+    def _create_ctrl_subnet(self, context):
+        with context.session.begin(subtransactions=True):
+            # Plugin DB - Subnet Create
+            net_db = super(OVXNeutronPlugin, self).get_network(
+                context, self._ctrl_network.id, fields=None)
+            
+            sub_db = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
+
+        return sub_db
+    
