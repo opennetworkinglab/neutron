@@ -137,7 +137,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Init RPC
         self.setup_rpc()
         # Controller manager
-        self.ctrl_manager = ControllerManager()
+        #self.ctrl_manager = ControllerManager()
         # Virtual network and subnet for SDN controllers
         #self.ctrl_network = self._create_ctrl_network()
         #self.ctrl_subnet = self._create_ctrl_subnet()
