@@ -20,7 +20,7 @@ def add_ovx_network(session, neutron_network_id, ovx_tenant_id, ovx_controller):
     ovx_network_mapping = ovx_models.NetworkMapping(neutron_network_id=neutron_network_id,
                                                     ovx_tenant_id=ovx_tenant_id,
                                                     ovx_controller=ovx_controller)
-    session.add(ovx_tenant_network_mapping)
+    session.add(ovx_network_mapping)
 
 def get_ovx_tenant_id(session, neutron_network_id):
     query = session.query(ovx_models.NetworkMapping)
