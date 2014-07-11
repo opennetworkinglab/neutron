@@ -366,21 +366,21 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         network = {
             'network': {
                 'name': 'OVX_ctrl_network',
-                'admin_state_up' = True,
-                'shared' = False
+                'admin_state_up': True,
+                'shared': False
             }
         }
         # TODO: other fields: tenant_id, dns_nameservers, allocation_pools, host_routes, gateway_ip
         subnet = {
             'subnet': {
-                'name' = 'OVX_ctrl_subnet',
-                'ip_version' = 4,
-                'cidr' = '192.168.0.0/16',
-                'gateway_ip' = None,
-                'dns_nameservers' = [],
-                'allocation_pools' = [{'start': '192.168.0.2', 'end': '192.168.255.254'}],
-                'host_routes' = [],
-                'enable_dhcp' = True
+                'name': 'OVX_ctrl_subnet',
+                'ip_version': 4,
+                'cidr': '192.168.0.0/16',
+                'gateway_ip': None,
+                'dns_nameservers': [],
+                'allocation_pools': [{'start': '192.168.0.2', 'end': '192.168.255.254'}],
+                'host_routes': [],
+                'enable_dhcp': True
             }
         }
         with context.session.begin(subtransactions=True):
