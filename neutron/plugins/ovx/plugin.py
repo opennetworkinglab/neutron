@@ -96,22 +96,16 @@ class ControllerManager():
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
                                 service_type="compute")
-        # try:
-        #     self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
-        #     self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
-        # except Exception as e:
-        #     LOG.error("Could not initialize Nova bindings. Check your config.")
-        #     sys.exit(1)
-
-    def spawn(self, network_id, ip=None):
-        """Spawns SDN controller inside the virtual network identified by Neutron network ID.
-        Returns the Nova server ID and IP address."""
         try:
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
         except Exception as e:
             LOG.error("Could not initialize Nova bindings. Check your config.")
             sys.exit(1)
+
+    def spawn(self, network_id, ip=None):
+        """Spawns SDN controller inside the virtual network identified by Neutron network ID.
+        Returns the Nova server ID and IP address."""
         # TODO: make name unique
         nic_config = {}
         nic_config['net-id'] = network_id
@@ -396,7 +390,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             subnet_db = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
 
             # Hard-coded controller for the controllers' virtual network
-            ctrl = 'tcp:192.168.0.1:10000'
+            ctrl = 'tcp:192.168.56.6:10000'
             # Subnet value is irrelevant to OVX
             subnet = '10.0.0.0/24'
             
@@ -404,7 +398,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Start network if requested
             self.ovx_client.startNetwork(ovx_tenant_id)
 
-            (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], ip='192.168.0.1')
+            (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], ip='192.168.56.6')
             
             # Save mapping between Neutron network ID and OVX tenant ID
             ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
