@@ -381,6 +381,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         subnet['subnet']['ip_version'] = 4
         subnet['subnet']['cidr'] = '192.168.0.0/16'
         subnet['subnet']['gateway_ip'] = None
+        subnet['subnet']['dns_nameservers'] = []
         subnet['subnet']['allocation_pools'] = [{'start': '192.168.0.2', 'end': '192.168.255.254'}]
         subnet['subnet']['host_routes'] = []
         subnet['subnet']['enable_dhcp'] = True
