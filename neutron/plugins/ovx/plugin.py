@@ -92,11 +92,12 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM for each requested controller inside
     the specified virtual network."""
-    def __init__(self):
+    def __init__(self, ctrl_network):
         # Nova config for default controllers
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
                                 service_type="compute")
+        self._ctrl_network = ctrl_network
         try:
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
@@ -104,19 +105,18 @@ class ControllerManager():
             LOG.error("Could not initialize Nova bindings. Check your config.")
             sys.exit(1)
 
-    def spawn(self, network_id):
-        """Spawns SDN controller inside the virtual network identified by Neutron network ID.
+    def spawn(self):
+        """Spawns SDN controller inside the virtual control network.
         Returns the Nova server ID and IP address."""
         # TODO: make name unique
-        nic_config = {}
-        nic_config['net-id'] = network_id
-        # Can also set fixed_ip if needed
+        nic_config = {'net-id': self._ctrl_network['id']}
+        # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX-%s' % network_id,
                                            image=self._image,
                                            flavor=self._flavor,
                                            nics=[nic_config])
         controller_id = server.id
-        controller_ip = server.addresses[network_id][0]['addr']
+        controller_ip = server.addresses[self._ctrl_network['label'][0]['addr']
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
         return (controller_id, controller_ip)
 
@@ -142,10 +142,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         portbindings_base.register_port_dict_function()
         # Init RPC
         self.setup_rpc()
-        # Controller manager
-        self.ctrl_manager = ControllerManager()
         # Virtual network and subnet for SDN controllers
-        self.ctrl_network_id = self._create_ctrl_network()
+        ctrl_network = self._create_ctrl_network()
+        # Controller manager
+        self.ctrl_manager = ControllerManager(ctrl_network)
 
     def setup_rpc(self):
         # RPC support
@@ -169,7 +169,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Save in db
             net = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            (controller_id, controller_ip) = self.ctrl_manager.spawn(self.ctrl_network_id)
+            (controller_id, controller_ip) = self.ctrl_manager.spawn()
             
             ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
             # Subnet value is irrelevant to OVX
@@ -361,6 +361,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _create_ctrl_network(self):
         """Creates OVX-based virtual network in which default SDN controllers will run."""
+        LOG.info("Creating virtual network for default SDN controllers.""")
         context = ctx.get_admin_context()
         # TODO: add tenant_id? (lookup by project_id)
         network = {
@@ -404,4 +405,4 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
             
         # Return created network
-        return net_db['id']
+        return net_db
