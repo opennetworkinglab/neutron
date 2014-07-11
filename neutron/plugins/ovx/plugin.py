@@ -111,7 +111,7 @@ class ControllerManager():
         # TODO: make name unique
         nic_config = {'net-id': self._ctrl_network['id']}
         # Can also set 'fixed_ip' if needed
-        server = self._nova.servers.create(name='OVX-%s' % network_id,
+        server = self._nova.servers.create(name='OVX-%s' % self._ctrl_network['id'],
                                            image=self._image,
                                            flavor=self._flavor,
                                            nics=[nic_config])
