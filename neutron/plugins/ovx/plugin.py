@@ -116,7 +116,8 @@ class ControllerManager():
                                            flavor=self._flavor,
                                            nics=[nic_config])
         controller_id = server.id
-        controller_ip = server.addresses[self._ctrl_network['label'][0]['addr']
+        network_label = self._ctrl_network['label']
+        controller_ip = server.addresses[network_label][0]['addr']
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
         return (controller_id, controller_ip)
 
