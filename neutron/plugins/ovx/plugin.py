@@ -404,7 +404,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Start network if requested
             self.ovx_client.startNetwork(ovx_tenant_id)
 
-            (controller_id, controller_ip) = self.ctrl_manager.spawn(self.net_db['id'], ip='192.168.0.1')
+            (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'], ip='192.168.0.1')
             
             # Save mapping between Neutron network ID and OVX tenant ID
             ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
