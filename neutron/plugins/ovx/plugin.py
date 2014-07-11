@@ -394,8 +394,5 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             ovx_tenant_id = self._do_big_switch_network(vnet_ctrl, vnet_subnet)
             self.ovx_client.startNetwork(ovx_tenant_id)
 
-            # Save mapping between Neutron network ID and OVX tenant ID
-            ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
-
         # Return created network
         return net_db['id']
