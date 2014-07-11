@@ -22,6 +22,7 @@ import sys
 
 from oslo.config import cfg
 
+from neutron import context as ctx
 from neutron.common import constants as q_const
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
@@ -364,8 +365,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return tenant_id
 
-    def _create_ctrl_network(self, context):
+    def _create_ctrl_network(self):
         """Creates OVX-based virtual network in which default SDN controllers will run."""
+        context = ctx.get_admin_context()
         network = {}
         network['network'] = {}
         network['network']['name'] = 'OVX_ctrl_network'
