@@ -401,7 +401,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Save mapping between Neutron network ID and OVX tenant ID
             # Generated random controller ID
             controller_id = uuid.uuid4().hex
-            ovxdb.add_ovx_network(context.session, net['id'], ovx_tenant_id, controller_id)
+            ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
             
         # Return created network
         return net_db['id']
