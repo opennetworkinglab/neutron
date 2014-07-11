@@ -395,7 +395,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             subnet['subnet']['network_id'] = net_db['id']
             subnet_db = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
 
-            ctrl = 'tcp:192.168.0.1:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
+            # Hard-coded controller for the controllers' virtual network
+            ctrl = 'tcp:192.168.0.1:10000'
             # Subnet value is irrelevant to OVX
             subnet = '10.0.0.0/24'
             
