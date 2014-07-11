@@ -19,6 +19,7 @@ This plugin will forward authenticated REST API calls to OVX.
 """
 
 import sys
+import uuid
 
 from oslo.config import cfg
 
@@ -361,24 +362,27 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
     def _create_ctrl_network(self):
         """Creates OVX-based virtual network in which default SDN controllers will run."""
         context = ctx.get_admin_context()
-        network = {}
-        network['network'] = {}
-        network['network']['name'] = 'OVX_ctrl_network'
-        network['network']['admin_state_up'] = True
-        network['network']['shared'] = False
-        # TODO: need to lookup tenant_id from project_id?
-        #network['network']['tenant_id'] =
-        subnet = {}
-        subnet['subnet'] = {}
-        subnet['subnet']['name'] = 'OVX_ctrl_subnet'
-        subnet['subnet']['ip_version'] = 4
-        subnet['subnet']['cidr'] = '192.168.0.0/16'
-        subnet['subnet']['gateway_ip'] = None
-        subnet['subnet']['dns_nameservers'] = []
-        subnet['subnet']['allocation_pools'] = [{'start': '192.168.0.2', 'end': '192.168.255.254'}]
-        subnet['subnet']['host_routes'] = []
-        subnet['subnet']['enable_dhcp'] = True
+        # TODO: add tenant_id? (lookup by project_id)
+        network = {
+            'network': {
+                'name': 'OVX_ctrl_network',
+                'admin_state_up' = True,
+                'shared' = False
+            }
+        }
         # TODO: other fields: tenant_id, dns_nameservers, allocation_pools, host_routes, gateway_ip
+        subnet = {
+            'subnet': {
+                'name' = 'OVX_ctrl_subnet',
+                'ip_version' = 4,
+                'cidr' = '192.168.0.0/16',
+                'gateway_ip' = None,
+                'dns_nameservers' = [],
+                'allocation_pools' = [{'start': '192.168.0.2', 'end': '192.168.255.254'}],
+                'host_routes' = [],
+                'enable_dhcp' = True,
+            }
+        }
         with context.session.begin(subtransactions=True):
             # Register network and subnet in db
             net_db = super(OVXNeutronPlugin, self).create_network(context, network)
@@ -394,5 +398,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             ovx_tenant_id = self._do_big_switch_network(vnet_ctrl, vnet_subnet)
             self.ovx_client.startNetwork(ovx_tenant_id)
 
+            # Save mapping between Neutron network ID and OVX tenant ID
+            # Generated random controller ID
+            controller_id = uuid.uuid4().hex
+            ovxdb.add_ovx_network(context.session, net['id'], ovx_tenant_id, controller_id)
+            
         # Return created network
         return net_db['id']
