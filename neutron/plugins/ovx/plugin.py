@@ -95,16 +95,22 @@ class ControllerManager():
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
                                 service_type="compute")
+        # try:
+        #     self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
+        #     self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
+        # except Exception as e:
+        #     LOG.error("Could not initialize Nova bindings. Check your config.")
+        #     sys.exit(1)
+
+    def spawn(self, network_id, ip=None):
+        """Spawns SDN controller inside the virtual network identified by Neutron network ID.
+        Returns the Nova server ID and IP address."""
         try:
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
         except Exception as e:
             LOG.error("Could not initialize Nova bindings. Check your config.")
             sys.exit(1)
-
-    def spawn(self, network_id, ip=None):
-        """Spawns SDN controller inside the virtual network identified by Neutron network ID.
-        Returns the Nova server ID and IP address."""
         # TODO: make name unique
         nic_config = {}
         nic_config['net-id'] = network_id
