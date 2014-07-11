@@ -380,7 +380,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 'dns_nameservers' = [],
                 'allocation_pools' = [{'start': '192.168.0.2', 'end': '192.168.255.254'}],
                 'host_routes' = [],
-                'enable_dhcp' = True,
+                'enable_dhcp' = True
             }
         }
         with context.session.begin(subtransactions=True):
