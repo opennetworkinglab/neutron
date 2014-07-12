@@ -90,14 +90,15 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
 class ControllerManager():
-    """Simple manager for SDN controllers. Spawns a VM for each requested controller inside
-    the specified virtual network."""
+    """Simple manager for SDN controllers. Spawns a VM running a controller for each request
+    inside the specified virtual control network."""
     def __init__(self, ctrl_network):
         # Nova config for default controllers
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
                                 service_type="compute")
-        self._ctrl_network = ctrl_network
+        self._ctrl_network_id = ctrl_network['id']
+        self._ctrl_network_name = ctrl_network['name']
         try:
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
@@ -105,20 +106,18 @@ class ControllerManager():
             LOG.error("Could not initialize Nova bindings. Check your config.")
             sys.exit(1)
 
-    def spawn(self):
+    def spawn(self, name):
         """Spawns SDN controller inside the virtual control network.
         Returns the Nova server ID and IP address."""
         # TODO: make name unique
-        nic_config = {'net-id': self._ctrl_network['id']}
+        nic_config = {'net-id': self._ctrl_network_id}
         # Can also set 'fixed_ip' if needed
-        server = self._nova.servers.create(name='OVX-%s' % self._ctrl_network['id'],
+        server = self._nova.servers.create(name='OVX-%s' % name,
                                            image=self._image,
                                            flavor=self._flavor,
                                            nics=[nic_config])
         controller_id = server.id
-        network_name = self._ctrl_network['name']
-        LOG.error("==SPAWN== %s" % server.addresses)
-        controller_ip = server.addresses[network_name][0]['addr']
+        controller_ip = server.addresses[self._ctrl_network_name][0]['addr']
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
         return (controller_id, controller_ip)
 
@@ -169,9 +168,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """
         with context.session.begin(subtransactions=True):
             # Save in db
-            net = super(OVXNeutronPlugin, self).create_network(context, network)
+            net_db = super(OVXNeutronPlugin, self).create_network(context, network)
 
-            (controller_id, controller_ip) = self.ctrl_manager.spawn()
+            (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'])
             
             ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
             # Subnet value is irrelevant to OVX
@@ -179,14 +178,14 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             
             ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
             # Start network if requested
-            if net['admin_state_up']:
+            if net_db['admin_state_up']:
                 self.ovx_client.startNetwork(ovx_tenant_id)
 
             # Save mapping between Neutron network ID and OVX tenant ID
-            ovxdb.add_ovx_network(context.session, net['id'], ovx_tenant_id, controller_id)
+            ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
 
         # Return created network
-        return net
+        return net_db
 
     def update_network(self, context, id, network):
         """Update values of a network.
@@ -246,7 +245,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      populated.
         """
         with context.session.begin(subtransactions=True):
-            # Set port status as 'DOWN' - will be updated by agent
+            # Set port status as 'DOWN' - will be updated by agent RPC
             port['port']['status'] = q_const.PORT_STATUS_DOWN
             
             # Plugin DB - Port Create and Return port
@@ -402,7 +401,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self.ovx_client.startNetwork(ovx_tenant_id)
 
             # Save mapping between Neutron network ID and OVX tenant ID
-            # Generated random controller ID
+            # Generate random/fake controller ID, we don't use it
             controller_id = uuid.uuid4().hex
             ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
             

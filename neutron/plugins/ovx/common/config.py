@@ -29,18 +29,18 @@ nova_opts = [
     cfg.StrOpt('auth_url', default='http://localhost:5000/v2.0/', help=_('Nova authentication URL.')),
     cfg.StrOpt('image_name', default='cirros-0.3.1-x86_64-uec', help=_('SDN controller image name.')),
     cfg.IntOpt('image_port', default=10000, help=_('OpenFlow port of SDN controller image.')),
-    cfg.StrOpt('flavor', default='m1.tiny', help=_('Machine flavor on which to run SDN controller.')),
+    cfg.StrOpt('flavor', default='m1.tiny', help=_('Machine flavor on which to run SDN controller.'))
 ]
 
 ovs_opts = [
-    cfg.StrOpt('integration_bridge', default='br-int', help=_("Integration bridge to use")),
+    cfg.StrOpt('integration_bridge', default='br-int', help=_("Integration bridge to use"))
 ]
 
 ovx_opts = [
     cfg.StrOpt('host', default='localhost', help=_('OVX server address.')),
     cfg.IntOpt('port', default=8080, help=_('OVX server port.')),
     cfg.StrOpt('username', default='admin', help=_('OVX admin user.')),
-    cfg.StrOpt('password', default='', help=_('OVX admin passord.')),
+    cfg.StrOpt('password', default='', help=_('OVX admin passord.'))
 ]
 
 cfg.CONF.register_opts(agent_opts, 'AGENT')
