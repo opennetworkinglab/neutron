@@ -49,7 +49,7 @@ class OVXNeutronAgent():
         # Lookup or create bridges for data and control network
         # Regular compute nodes will be plugged into the data bridge
         # Virtual network controllers will be plugged into the control bridge
-        controller = 'tcp:%s:%s' % (cfg.CONF.of_host, cfg.CONF.of_port)
+        controller = 'tcp:%s:%s' % (cfg.CONF.OVX.of_host, cfg.CONF.OVX.of_port)
         self.data_bridge = self.setup_bridge(data_bridge, data_interface, root_helper, controller=controller)
         self.ctrl_bridge = self.setup_bridge(ctrl_bridge, ctrl_interface, root_helper)
         
