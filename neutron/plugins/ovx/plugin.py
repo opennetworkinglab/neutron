@@ -91,7 +91,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
-    inside the specified virtual control network."""
+    inside the control network."""
     def __init__(self, ctrl_network):
         # Nova config for default controllers
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
@@ -107,9 +107,8 @@ class ControllerManager():
             sys.exit(1)
 
     def spawn(self, name):
-        """Spawns SDN controller inside the virtual control network.
+        """Spawns SDN controller inside the control network.
         Returns the Nova server ID and IP address."""
-        # TODO: make name unique
         nic_config = {'net-id': self._ctrl_network_id}
         # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX-%s' % name,

@@ -44,12 +44,15 @@ class OVXPluginApi(agent_rpc.PluginApi):
 class OVXNeutronAgent():
     def __init__(self, integration_bridge, root_helper, polling_interval):
         LOG.info(_("Started OVX Neutron Agent"))
-        # Lookup integration bridge
-        self.int_br = ovs_lib.OVSBridge(integration_bridge, root_helper)
+
+        # Lookup or create bridges for data and control network
+        # Regular compute nodes will be plugged into the data bridge
+        # Virtual network controllers will be plugged into the control bridge
+        self.data_bridge = self.setup_bridge(data_bridge, data_port_name, root_helper)
+        self.ctrl_bridge = self.setup_bridge(ctrl_bridge, ctrl_port_name, root_helper)
         
-        self.root_helper = root_helper
         self.polling_interval = polling_interval
-        self.dpid = self.int_br.get_datapath_id()
+        self.dpid = self.data_bridge.get_datapath_id()
 
         self.agent_state = {
             'binary': 'neutron-ovx-agent',
@@ -60,6 +63,9 @@ class OVXNeutronAgent():
             'start_flag': True}
         
         self.setup_rpc()
+
+        self.setup_data_bridge()
+        self.setup_ctrl_bridge()
 
     def setup_rpc(self):
         self.host = utils.get_hostname()
@@ -74,11 +80,20 @@ class OVXNeutronAgent():
         report_interval = cfg.CONF.AGENT.report_interval
         if report_interval:
             heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
-            heartbeat.start(interval=report_interval)        
+            heartbeat.start(interval=report_interval)
+    
+    def setup_bridge(self, bridge_name, port_name, root_helper):
+        if ovs_lib.bridge_exists(bridge_name):
+            return ovx_lib.OVSBridge(bridge_name, root_helper)
+        else:
+            bridge = ovs_lib.OVSBridge(bridge_name, root_helper)
+            bridge.create()
+            bridge.add_port(port_name)
 
     def _report_state(self):
         try:
-            num_devices = len(self.int_br.get_port_name_list())
+            num_devices = len(self.data_bridge.get_port_name_list() +
+                              self.ctrl_bridge.get_port_name_list())
             self.agent_state['configurations']['devices'] = num_devices
             self.state_rpc.report_state(self.context, self.agent_state)
             self.agent_state.pop('start_flag', None)
@@ -86,7 +101,7 @@ class OVXNeutronAgent():
             LOG.error(_("Failed reporting state!"))
             
     def update_ports(self, registered_ports):
-        ports = self.int_br.get_vif_port_set()
+        ports = self.data_bridge.get_vif_port_set()
         return ports - registered_ports
 
     def process_ports(self, ports):
@@ -96,7 +111,7 @@ class OVXNeutronAgent():
             LOG.debug(_("Port %s added"), port)
             
             # Inform plugin that port is up
-            ovs_port = self.int_br.get_vif_port_by_id(port)
+            ovs_port = self.data_bridge.get_vif_port_by_id(port)
             port_id = ovs_port.vif_id
             port_number = ovs_port.ofport
             self.plugin_rpc.update_ports(self.context, port_id, self.dpid, port_number)
