@@ -33,12 +33,15 @@ nova_opts = [
 ]
 
 ovs_opts = [
-    cfg.StrOpt('integration_bridge', default='br-int', help=_("Integration bridge to use"))
+    cfg.StrOpt('data_bridge', default='br-data', help=_("Data network bridge")),
+    cfg.StrOpt('ctrl_bridge', default='br-ctrl', help=_("Control network bridge"))
 ]
 
 ovx_opts = [
-    cfg.StrOpt('host', default='localhost', help=_('OVX server address.')),
-    cfg.IntOpt('port', default=8080, help=_('OVX server port.')),
+    cfg.StrOpt('api_host', default='localhost', help=_('OVX RPC API server address.')),
+    cfg.IntOpt('api_port', default=8080, help=_('OVX RPC API server port.')),
+    cfg.StrOpt('of_host', default='localhost', help=_('OVX OpenFlow server address.')),
+    cfg.IntOpt('of_port', default=6633, help=_('OVX OpenFlow server port.')),
     cfg.StrOpt('username', default='admin', help=_('OVX admin user.')),
     cfg.StrOpt('password', default='', help=_('OVX admin passord.'))
 ]

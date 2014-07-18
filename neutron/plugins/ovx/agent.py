@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sys
 import time
 
 from oslo.config import cfg
@@ -42,13 +43,14 @@ class OVXPluginApi(agent_rpc.PluginApi):
                                          port_number=port_number))
 
 class OVXNeutronAgent():
-    def __init__(self, integration_bridge, root_helper, polling_interval):
+    def __init__(self, data_bridge, ctrl_bridge, root_helper, polling_interval):
         LOG.info(_("Started OVX Neutron Agent"))
 
         # Lookup or create bridges for data and control network
         # Regular compute nodes will be plugged into the data bridge
         # Virtual network controllers will be plugged into the control bridge
-        self.data_bridge = self.setup_bridge(data_bridge, data_port_name, root_helper)
+        controller = 'tcp:%s:%s' % (cfg.CONF.of_host:cfg.CONF.of_port)
+        self.data_bridge = self.setup_bridge(data_bridge, data_port_name, root_helper, controller=controller)
         self.ctrl_bridge = self.setup_bridge(ctrl_bridge, ctrl_port_name, root_helper)
         
         self.polling_interval = polling_interval
@@ -56,16 +58,14 @@ class OVXNeutronAgent():
 
         self.agent_state = {
             'binary': 'neutron-ovx-agent',
-            'host': cfg.CONF.host,
+            'api_server': '%s:%s' % (cfg.CONF.api_host, cfg.CONF.api_port),
+            'openflow_server': '%s:%s' % (cfg.CONF.of_host, cfg.CONF.of_port),
             'topic': q_const.L2_AGENT_TOPIC,
             'configurations': {},
             'agent_type': "OpenVirteX agent",
             'start_flag': True}
         
         self.setup_rpc()
-
-        self.setup_data_bridge()
-        self.setup_ctrl_bridge()
 
     def setup_rpc(self):
         self.host = utils.get_hostname()
@@ -82,13 +82,25 @@ class OVXNeutronAgent():
             heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
             heartbeat.start(interval=report_interval)
     
-    def setup_bridge(self, bridge_name, port_name, root_helper):
+    def setup_bridge(self, bridge_name, port_name, root_helper, controller=None):
+        """Set up OVS bridge with given name and connect interface with given port name.
+        If provided, point the bridge to the controller."""
+        
         if ovs_lib.bridge_exists(bridge_name):
-            return ovx_lib.OVSBridge(bridge_name, root_helper)
+            bridge = ovx_lib.OVSBridge(bridge_name, root_helper)
         else:
             bridge = ovs_lib.OVSBridge(bridge_name, root_helper)
             bridge.create()
             bridge.add_port(port_name)
+
+        if controller:
+            try:
+                bridge.run_vsctl(['set-controller', bridge_name, controller], check_error=True)
+            except Exception as e:
+                LOG.error("Failed to set bridge controller: %s" % e)
+                sys.exit(1)
+
+        return bridge
 
     def _report_state(self):
         try:
@@ -101,6 +113,7 @@ class OVXNeutronAgent():
             LOG.error(_("Failed reporting state!"))
             
     def update_ports(self, registered_ports):
+        # We only care about compute node ports
         ports = self.data_bridge.get_vif_port_set()
         return ports - registered_ports
 
@@ -156,11 +169,11 @@ def main():
 
     logging_config.setup_logging(cfg.CONF)
 
-    integration_bridge = cfg.CONF.OVS.integration_bridge
+    data_bridge = cfg.CONF.OVS.data_bridge
     root_helper = cfg.CONF.AGENT.root_helper
     polling_interval = cfg.CONF.AGENT.polling_interval
     
-    agent = OVXNeutronAgent(integration_bridge, root_helper, polling_interval)
+    agent = OVXNeutronAgent(data_bridge, control_bridge, root_helper, polling_interval)
 
     LOG.info(_("Agent initialized successfully, now running... "))
     agent.daemon_loop()
