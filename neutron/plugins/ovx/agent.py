@@ -171,8 +171,8 @@ def main():
 
     data_bridge = cfg.CONF.OVS.data_bridge
     control_bridge = cfg.CONF.OVS.data_bridge
-    data_interface = cfg.CONF.OVS.data_iface
-    ctrl_interface = cfg.CONF.OVS.ctrl_iface
+    data_interface = cfg.CONF.OVS.data_interface
+    ctrl_interface = cfg.CONF.OVS.ctrl_interface
     root_helper = cfg.CONF.AGENT.root_helper
     polling_interval = cfg.CONF.AGENT.polling_interval
     
