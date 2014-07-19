@@ -86,7 +86,7 @@ class OVXNeutronAgent():
         """Set up OVS bridge with given name and connect interface with given port name.
         If provided, point the bridge to the controller."""
         
-        bridge = ovx_lib.OVSBridge(bridge_name, root_helper)
+        bridge = ovs_lib.OVSBridge(bridge_name, root_helper)
         if not ovs_lib.bridge_exists(bridge_name):
             bridge.create()
             bridge.add_port(port_name)
