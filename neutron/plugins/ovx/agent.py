@@ -87,9 +87,9 @@ class OVXNeutronAgent():
         If provided, point the bridge to the controller."""
         
         bridge = ovs_lib.OVSBridge(bridge_name, root_helper)
-        if not ovs_lib.bridge_exists(bridge_name):
-            bridge.create()
-            bridge.add_port(port_name)
+        # Following commands do nothing if the bridge & port already exist
+        bridge.create()
+        bridge.add_port(port_name)
 
         if controller:
             try:
