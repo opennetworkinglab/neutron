@@ -25,7 +25,7 @@ agent_opts = [
 nova_opts = [
     cfg.StrOpt('username', default='admin', help=_('Nova username.')),
     cfg.StrOpt('password', default='', help=_('Nova password.')),
-    cfg.StrOpt('project_id', default='admin', help=_('Nova project ID (name, not the tenant ID given by a UUID).')),
+    cfg.StrOpt('project_id', default='admin', help=_('Nova project ID (name, not the tenant UUID).')),
     cfg.StrOpt('auth_url', default='http://localhost:5000/v2.0/', help=_('Nova authentication URL.')),
     cfg.StrOpt('image_name', default='cirros-0.3.1-x86_64-uec', help=_('SDN controller image name.')),
     cfg.IntOpt('image_port', default=10000, help=_('OpenFlow port of SDN controller image.')),
