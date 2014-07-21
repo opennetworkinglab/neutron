@@ -168,7 +168,7 @@ def main():
     logging_config.setup_logging(cfg.CONF)
 
     data_bridge = cfg.CONF.OVS.data_bridge
-    control_bridge = cfg.CONF.OVS.data_bridge
+    control_bridge = cfg.CONF.OVS.ctrl_bridge
     data_interface = cfg.CONF.OVS.data_interface
     ctrl_interface = cfg.CONF.OVS.ctrl_interface
     root_helper = cfg.CONF.AGENT.root_helper
