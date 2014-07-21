@@ -61,6 +61,7 @@ class OVXNeutronAgent():
             'api_server': '%s:%s' % (cfg.CONF.OVX.api_host, cfg.CONF.OVX.api_port),
             'openflow_server': '%s:%s' % (cfg.CONF.OVX.of_host, cfg.CONF.OVX.of_port),
             'topic': q_const.L2_AGENT_TOPIC,
+            'host': cfg.CONF.host,
             'configurations': {},
             'agent_type': "OpenVirteX agent",
             'start_flag': True}
