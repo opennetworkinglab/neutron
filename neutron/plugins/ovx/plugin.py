@@ -111,7 +111,7 @@ class ControllerManager():
         # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX-%s' % name,
                                            image=self._image,
-                                           flavor=self._flavor),
+                                           flavor=self._flavor,
                                            nics=[])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
@@ -163,6 +163,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         includes both software and hardware switches) that are connected to OVX.
         An image that is running an OpenFlow controller is spawned for the virtual network.
         """
+        LOG.debug("Neutron OVX: create network")
         with context.session.begin(subtransactions=True):
             # Save in db
             net_db = super(OVXNeutronPlugin, self).create_network(context, network)
@@ -195,6 +196,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                         :obj:`RESOURCE_ATTRIBUTE_MAP` object in
                         :file:`neutron/api/v2/attributes.py`.
         """
+        LOG.debug("Neutron OVX: update network")
         # requested admin state
         req_state = network['network']['admin_state_up']
         # lookup old network state
@@ -217,6 +219,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param context: neutron api request context
         :param id: UUID representing the network to delete.
         """
+        LOG.debug("Neutron OVX: delete network")
         with context.session.begin(subtransactions=True):
             # Lookup OVX tenant ID
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
@@ -241,6 +244,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      :file:`neutron/api/v2/attributes.py`.  All keys will be
                      populated.
         """
+        LOG.debug("Neutron OVX: create port")
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent RPC
             port['port']['status'] = q_const.PORT_STATUS_DOWN
@@ -265,6 +269,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      'allow_put' as listed in the :obj:`RESOURCE_ATTRIBUTE_MAP`
                      object in :file:`neutron/api/v2/attributes.py`.
         """
+        LOG.debug("Neutron OVX: update port")
         # TODO: log error when trying to change network_id or mac_address
         # requested admin state
         req_state = port['port'].get('admin_state_up')
@@ -293,6 +298,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param context: neutron api request context
         :param id: UUID representing the port to delete.
         """
+        LOG.debug("Neutron OVX: delete port")
         with context.session.begin(subtransactions=True):
             # Lookup OVX tenant ID, virtual dpid and virtual port number
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
@@ -310,16 +316,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
-
-    def create_subnet(self, context, subnet):
-        with context.session.begin(subtransactions=True):
-            # Plugin DB - Subnet Create
-            net_db = super(OVXNeutronPlugin, self).get_network(
-                context, subnet['subnet']['network_id'], fields=None)
-            
-            sub_db = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
-
-        return sub_db
 
     def _do_big_switch_network(self, ctrl, subnet, routing='spf', num_backup=1):
         """Create virtual network in OVX that is a single big switch.
