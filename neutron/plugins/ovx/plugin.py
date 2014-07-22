@@ -111,8 +111,8 @@ class ControllerManager():
         # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX-%s' % name,
                                            image=self._image,
-                                           flavor=self._flavor)#,
-                                           #nics=[nic_config])
+                                           flavor=self._flavor),
+                                           nics=[])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
         #controller_ip = server.addresses[self._ctrl_network_name][0]['addr']
