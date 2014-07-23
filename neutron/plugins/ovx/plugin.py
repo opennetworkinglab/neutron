@@ -92,7 +92,8 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
     inside the control network."""
-    def __init__(self):
+    def __init__(self, ctrl_network_id):
+        self.ctrl_network_id = ctrl_network_id
         # Nova config for default controllers
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
@@ -107,12 +108,12 @@ class ControllerManager():
     def spawn(self, name):
         """Spawns SDN controller inside the control network.
         Returns the Nova server ID and IP address."""
-        #nic_config = {'net-id': self._ctrl_network_id}
+        nic_config = {'net-id': self.ctrl_network_id}
         # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX-%s' % name,
                                            image=self._image,
                                            flavor=self._flavor,
-                                           nics=[])
+                                           nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
         #controller_ip = server.addresses[self._ctrl_network_name][0]['addr']
@@ -142,8 +143,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         portbindings_base.register_port_dict_function()
         # Init RPC
         self.setup_rpc()
+        # Create empty control network
+        ctrl_network_id = self.setup_ctrl_network()
         # Controller manager
-        self.ctrl_manager = ControllerManager()
+        self.ctrl_manager = ControllerManager(ctrl_network_id)
 
     def setup_rpc(self):
         # RPC support
@@ -353,3 +356,17 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             raise
 
         return tenant_id
+
+    def setup_ctrl_network(self):
+        """Creates network in Neutron, return network_id."""
+        context = ctx.get_admin_context()
+        # TODO: add tenant_id? (lookup by project_id)
+        network = {
+            'network': {
+                'name': 'OVX_ctrl_network',
+                'admin_state_up': True,
+                'shared': False
+                }
+        }
+        net = super(OVXNeutronPlugin, self).create_network(context, network)
+        return net['id']
