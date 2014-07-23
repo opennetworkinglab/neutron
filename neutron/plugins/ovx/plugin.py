@@ -137,7 +137,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                                            self.conf_ovx.username, self.conf_ovx.password)
         # Init port bindings
         self.base_binding_dict = {
-            portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS
+            portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS,
         }
         portbindings_base.register_port_dict_function()
         # Init RPC
@@ -245,6 +245,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      populated.
         """
         LOG.debug("Neutron OVX: create port")
+        LOG.error("=== CREATE PORT NETWORK ID === %s" % port['port']['network_id'])
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent RPC
             port['port']['status'] = q_const.PORT_STATUS_DOWN

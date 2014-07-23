@@ -69,6 +69,10 @@ EXTENDED_ATTRIBUTES_2_0 = {
                        'default': attributes.ATTR_NOT_SPECIFIED,
                        'enforce_policy': True,
                        'is_visible': True},
+        BRIDGE: {'allow_post': False, 'allow_put': False,
+                 'default': attributes.ATTR_NOT_SPECIFIED,
+                 'is_visible': True,
+                 'enforce_policy': True},
     }
 }
 
