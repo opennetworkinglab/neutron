@@ -249,7 +249,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug("Neutron OVX: create port")
         
-        self._check_valid_port(port['port'])
+        #self._check_valid_port(port['port'])
         
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent RPC
