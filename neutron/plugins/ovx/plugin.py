@@ -144,9 +144,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Init RPC
         self.setup_rpc()
         # Create empty control network
-        ctrl_network_id = self.setup_ctrl_network()
+        self.ctrl_network_id = self._setup_ctrl_network()
         # Controller manager
-        self.ctrl_manager = ControllerManager(ctrl_network_id)
+        self.ctrl_manager = ControllerManager(self.ctrl_network_id)
 
     def setup_rpc(self):
         # RPC support
@@ -248,7 +248,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      populated.
         """
         LOG.debug("Neutron OVX: create port")
-        LOG.error("=== CREATE PORT NETWORK ID === %s" % port['port']['network_id'])
+        
+        self._check_valid_port(port['port'])
+        
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent RPC
             port['port']['status'] = q_const.PORT_STATUS_DOWN
@@ -274,6 +276,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      object in :file:`neutron/api/v2/attributes.py`.
         """
         LOG.debug("Neutron OVX: update port")
+        
+        self._check_valid_port(port['port'])
+        
         # TODO: log error when trying to change network_id or mac_address
         # requested admin state
         req_state = port['port'].get('admin_state_up')
@@ -303,6 +308,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param id: UUID representing the port to delete.
         """
         LOG.debug("Neutron OVX: delete port")
+        
+        self._check_valid_port(port['port'])
+        
         with context.session.begin(subtransactions=True):
             # Lookup OVX tenant ID, virtual dpid and virtual port number
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
@@ -357,7 +365,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return tenant_id
 
-    def setup_ctrl_network(self):
+    def _setup_ctrl_network(self):
         """Creates network in Neutron, return network_id."""
         context = ctx.get_admin_context()
         # TODO: add tenant_id? (lookup by project_id)
@@ -370,3 +378,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         }
         net = super(OVXNeutronPlugin, self).create_network(context, network)
         return net['id']
+
+    def _check_valid_port(self, port):
+        """Check if port is valid. Raise exception if port is being created on the controller network."""
+        if (port['network_id'] == self.ctrl_network_id)
+            raise Exception("Port operation in controller network not allowed (probably DHCP agent)")
