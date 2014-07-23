@@ -381,5 +381,5 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _check_valid_port(self, port):
         """Check if port is valid. Raise exception if port is being created on the controller network."""
-        if (port['network_id'] == self.ctrl_network_id)
+        if (port['network_id'] == self.ctrl_network_id):
             raise Exception("Port operation in controller network not allowed (probably DHCP agent)")
