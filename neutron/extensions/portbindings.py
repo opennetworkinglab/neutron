@@ -33,6 +33,8 @@ PROFILE = 'binding:profile'
 #  - port_filter : Boolean value indicating Neutron provides port filtering
 #                  features such as security group and anti MAC/IP spoofing
 CAPABILITIES = 'binding:capabilities'
+# Bridge name to which VIF will be connected
+BRIDGE = 'binding:bridge'
 CAP_PORT_FILTER = 'port_filter'
 
 VIF_TYPE_UNBOUND = 'unbound'
@@ -72,7 +74,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
         BRIDGE: {'allow_post': False, 'allow_put': False,
                  'default': attributes.ATTR_NOT_SPECIFIED,
                  'is_visible': True,
-                 'enforce_policy': True},
+                 'enforce_policy': True}
     }
 }
 
