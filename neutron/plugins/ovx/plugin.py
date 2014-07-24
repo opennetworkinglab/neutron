@@ -138,7 +138,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                                            self.conf_ovx.username, self.conf_ovx.password)
         # Init port bindings
         self.base_binding_dict = {
-            portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS,
+            portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS
         }
         portbindings_base.register_port_dict_function()
         # Init RPC
