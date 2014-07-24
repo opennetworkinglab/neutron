@@ -92,8 +92,9 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
     inside the control network."""
-    def __init__(self, ctrl_network_id):
-        self.ctrl_network_id = ctrl_network_id
+    def __init__(self, ctrl_network):
+        self.ctrl_network_id = ctrl_network['id']
+        self.ctrl_network_name = ctrl_network['name']
         # Nova config for default controllers
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
@@ -116,8 +117,8 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
-        #controller_ip = server.addresses[self._ctrl_network_name][0]['addr']
-        controller_ip = '192.168.56.6'
+        controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
+        #controller_ip = '192.168.56.6'
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
         return (controller_id, controller_ip)
 
@@ -144,9 +145,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Init RPC
         self.setup_rpc()
         # Create empty control network
-        self.ctrl_network_id = self._setup_ctrl_network()
+        self.ctrl_network = self._setup_ctrl_network()
         # Controller manager
-        self.ctrl_manager = ControllerManager(self.ctrl_network_id)
+        self.ctrl_manager = ControllerManager(self.ctrl_network)
 
     def setup_rpc(self):
         # RPC support
@@ -384,8 +385,24 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 'shared': False
                 }
         }
-        net = super(OVXNeutronPlugin, self).create_network(context, network)
-        return net['id']
+        subnet = {
+            'subnet': {
+                'name': 'OVX_ctrl_subnet',
+                'ip_version': 4,
+                'cidr': '192.168.0.0/24',
+                'gateway_ip': None,
+                'dns_nameservers': [],
+                'allocation_pools': [{'start': '192.168.0.1', 'end': '192.168.0.254'}],
+                'host_routes': [],
+                'enable_dhcp': True
+            }
+        }
+        with context.session.begin(subtransactions=True):
+            # Register network and subnet in db
+            net = super(OVXNeutronPlugin, self).create_network(context, network)
+            subnet['subnet']['network_id'] = net['id']
+            subnet = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
+        return net
 
     def _check_valid_port(self, port):
         """Check if port is valid. Raise exception if port is being created on the controller network."""
