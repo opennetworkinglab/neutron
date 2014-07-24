@@ -260,10 +260,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             neutron_port = super(OVXNeutronPlugin, self).create_port(context, port)
 
             if port['port']['network_id'] == self.ctrl_network['id']:
-                LOG.error("+++ Setting port binding to ctrl for port %s" % port['port'])
+                LOG.debug("Setting port binding to ctrl for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.ctrl_bridge
             else:
-                LOG.error("+++ Setting port binding to data for port %s" % port['port'])
+                LOG.debug("Setting port binding to data for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.data_bridge
 
             self._process_portbindings_create_and_update(context, port['port'], neutron_port)
