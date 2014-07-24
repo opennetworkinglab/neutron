@@ -127,7 +127,7 @@ class ControllerManager():
                     
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        agents_db.AgentDbMixin,
-                       portbindings_db.PortBindingBaseMixin):
+                       portbindings_db.PortBindingMixin):
 
     supported_extension_aliases = ['quotas', 'binding', 'agent']
 
