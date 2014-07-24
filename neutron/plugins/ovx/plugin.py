@@ -20,6 +20,7 @@ This plugin will forward authenticated REST API calls to OVX.
 
 import sys
 import uuid
+import time
 
 from oslo.config import cfg
 
@@ -117,7 +118,8 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
-        LOG.error("CONTROLLER SERVER %s" % server)
+        while server.addresses.get(self.ctrl_network_name) == None:
+            time.sleep(1)
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
         #controller_ip = '192.168.56.6'
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
@@ -377,7 +379,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _setup_ctrl_network(self):
         """Creates network in Neutron, return network dict."""
-        LOG.error("SETTING UP CTRL NETWORK")
+        LOG.debug("Setting up control network")
         context = ctx.get_admin_context()
         # TODO: add tenant_id? (lookup by project_id)
         network = {
