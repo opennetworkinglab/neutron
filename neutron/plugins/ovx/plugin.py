@@ -117,7 +117,7 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
-        LOG.error("CONTROLLER IP %s" % server.addresses)
+        LOG.error("CONTROLLER SERVER %s" % server)
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
         #controller_ip = '192.168.56.6'
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
@@ -376,7 +376,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return tenant_id
 
     def _setup_ctrl_network(self):
-        """Creates network in Neutron, return network_id."""
+        """Creates network in Neutron, return network dict."""
+        LOG.error("SETTING UP CTRL NETWORK")
         context = ctx.get_admin_context()
         # TODO: add tenant_id? (lookup by project_id)
         network = {
@@ -398,11 +399,13 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 'enable_dhcp': True
             }
         }
+
         with context.session.begin(subtransactions=True):
             # Register network and subnet in db
             net = super(OVXNeutronPlugin, self).create_network(context, network)
             subnet['subnet']['network_id'] = net['id']
             subnet = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
+
         return net
 
     def _check_valid_port(self, port):
