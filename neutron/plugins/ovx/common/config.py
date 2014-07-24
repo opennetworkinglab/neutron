@@ -35,8 +35,6 @@ nova_opts = [
 ovs_opts = [
     cfg.StrOpt('data_bridge', default='br-int', help=_("Data network bridge")),
     cfg.StrOpt('ctrl_bridge', default='br-ctl', help=_("Control network bridge")),
-    cfg.StrOpt('data_interface', default='eth0', help=_("Data network interface")),
-    cfg.StrOpt('ctrl_interface', default='eth1', help=_("Control network interface"))
 ]
 
 ovx_opts = [

@@ -43,15 +43,15 @@ class OVXPluginApi(agent_rpc.PluginApi):
                                          port_number=port_number))
 
 class OVXNeutronAgent():
-    def __init__(self, data_bridge, ctrl_bridge, data_interface, ctrl_interface, root_helper, polling_interval):
+    def __init__(self, data_bridge, ctrl_bridge, root_helper, polling_interval):
         LOG.info(_("Started OVX Neutron Agent"))
 
         # Lookup or create bridges for data and control network
         # Regular compute nodes will be plugged into the data bridge
         # Virtual network controllers will be plugged into the control bridge
         controller = 'tcp:%s:%s' % (cfg.CONF.OVX.of_host, cfg.CONF.OVX.of_port)
-        self.data_bridge = self.setup_bridge(data_bridge, data_interface, root_helper, controller=controller)
-        self.ctrl_bridge = self.setup_bridge(ctrl_bridge, ctrl_interface, root_helper)
+        self.data_bridge = ovs_lib.OVSBridge(data_bridge, root_helper)
+        self.ctrl_bridge = ovs_lib.OVSBridge(ctrl_bridge, root_helper)
         
         self.polling_interval = polling_interval
         self.dpid = self.data_bridge.get_datapath_id()
@@ -83,24 +83,6 @@ class OVXNeutronAgent():
             heartbeat = loopingcall.FixedIntervalLoopingCall(self._report_state)
             heartbeat.start(interval=report_interval)
     
-    def setup_bridge(self, bridge_name, port_name, root_helper, controller=None):
-        """Set up OVS bridge with given name and connect interface with given port name.
-        If provided, point the bridge to the controller."""
-        
-        bridge = ovs_lib.OVSBridge(bridge_name, root_helper)
-        # Following commands do nothing if the bridge & port already exist
-        bridge.create()
-        bridge.add_port(port_name)
-
-        if controller:
-            try:
-                bridge.run_vsctl(['set-controller', bridge_name, controller], check_error=True)
-            except Exception as e:
-                LOG.error("Failed to set bridge controller: %s" % e)
-                sys.exit(1)
-
-        return bridge
-
     def _report_state(self):
         try:
             num_devices = len(self.data_bridge.get_port_name_list() +
@@ -170,12 +152,10 @@ def main():
 
     data_bridge = cfg.CONF.OVS.data_bridge
     control_bridge = cfg.CONF.OVS.ctrl_bridge
-    data_interface = cfg.CONF.OVS.data_interface
-    ctrl_interface = cfg.CONF.OVS.ctrl_interface
     root_helper = cfg.CONF.AGENT.root_helper
     polling_interval = cfg.CONF.AGENT.polling_interval
     
-    agent = OVXNeutronAgent(data_bridge, control_bridge, data_interface, ctrl_interface, root_helper, polling_interval)
+    agent = OVXNeutronAgent(data_bridge, control_bridge, root_helper, polling_interval)
 
     LOG.info(_("Agent initialized successfully, now running... "))
     agent.daemon_loop()
