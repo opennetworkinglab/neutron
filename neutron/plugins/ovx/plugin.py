@@ -286,7 +286,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug("Neutron OVX: update port")
         
-        self._check_valid_port(port['port'])
+        #self._check_valid_port(port['port'])
         
         # TODO: log error when trying to change network_id or mac_address
         # requested admin state
@@ -318,7 +318,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug("Neutron OVX: delete port")
         
-        self._check_valid_port(port['port'])
+        #self._check_valid_port(port['port'])
         
         with context.session.begin(subtransactions=True):
             # Lookup OVX tenant ID, virtual dpid and virtual port number
@@ -406,5 +406,5 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _check_valid_port(self, port):
         """Check if port is valid. Raise exception if port is being created on the controller network."""
-        if (port['network_id'] == self.ctrl_network_id):
+        if (port['network_id'] == self.ctrl_network['id']):
             raise Exception("Port operation in controller network not allowed (probably DHCP agent)")
