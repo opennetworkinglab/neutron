@@ -710,10 +710,13 @@ class DeviceManager(object):
 
             LOG.debug(_('Reusing existing device: %s.'), interface_name)
         else:
+            # Hack to inject bridge name
+            bridge = getattr(port, 'binding:bridge', None)
             self.driver.plug(network.id,
                              port.id,
                              interface_name,
                              port.mac_address,
+                             bridge=bridge,
                              namespace=network.namespace)
         ip_cidrs = []
         for fixed_ip in port.fixed_ips:
