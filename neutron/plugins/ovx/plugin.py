@@ -30,7 +30,7 @@ from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import db_base_plugin_v2
 from neutron.db import dhcp_rpc_base
-from neutron.db import portbindings_base
+from neutron.db import portbindings_db
 from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
 from neutron.openstack.common import log as logging
@@ -127,7 +127,7 @@ class ControllerManager():
                     
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        agents_db.AgentDbMixin,
-                       portbindings_base.PortBindingBaseMixin):
+                       portbindings_db.PortBindingBaseMixin):
 
     supported_extension_aliases = ['quotas', 'binding', 'agent']
 
