@@ -117,6 +117,7 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
+        LOG.error("CONTROLLER IP %s" % server.addresses)
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
         #controller_ip = '192.168.56.6'
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
