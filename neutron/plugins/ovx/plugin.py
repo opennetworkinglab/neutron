@@ -118,7 +118,7 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to assign IP address, and obtain it here
-        while server.addresses.get(self.ctrl_network_name) == None:
+        while self.ctrl_network_name not in server.addresses:
             LOG.error('WAITING %s' % server.addresses)
             time.sleep(1)
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
