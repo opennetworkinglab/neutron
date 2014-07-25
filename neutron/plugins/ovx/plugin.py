@@ -394,10 +394,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             'subnet': {
                 'name': 'OVX_ctrl_subnet',
                 'ip_version': 4,
-                'cidr': '192.168.0.0/24',
+                'cidr': '172.16.212.0/24',
                 'gateway_ip': None,
                 'dns_nameservers': [],
-                'allocation_pools': [{'start': '192.168.0.1', 'end': '192.168.0.254'}],
+                'allocation_pools': [{'start': '172.16.212.2', 'end': '192.168.0.254'}],
                 'host_routes': [],
                 'enable_dhcp': True
             }
