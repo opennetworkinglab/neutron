@@ -118,9 +118,10 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to obtain IP address
-        while self.ctrl_network_name not in self._nova.servers.find(id=controller_id).addresses:
+        while self.ctrl_network_name not in server.addresses:
             LOG.error('WAITING %s' % server.addresses)
             time.sleep(1)
+            server = self._nova.servers.find(id=controller_id)
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
         return (controller_id, controller_ip)
