@@ -117,12 +117,11 @@ class ControllerManager():
                                            flavor=self._flavor,
                                            nics=[nic_config])
         controller_id = server.id
-        # TODO: need a good way to assign IP address, and obtain it here
+        # TODO: need a good way to obtain IP address
         while self.ctrl_network_name not in self._nova.servers.find(id=controller_id).addresses:
             LOG.error('WAITING %s' % server.addresses)
             time.sleep(1)
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
-        #controller_ip = '192.168.56.6'
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
         return (controller_id, controller_ip)
 
