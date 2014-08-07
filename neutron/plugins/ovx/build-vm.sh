@@ -1,17 +1,20 @@
-#!/bin/sh
+#!/bin/bash
+
+# Example script to build a VM image that starts
+# an OpenFlow controller (FloodLight in this case) at boot.
 
 IMAGE=ubuntu-14.04-server-cloudimg-amd64-disk1.img
 URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
 
 # Download image
-if [ ! -f $IMAGE]; then
-    wget $URL
+if [ ! -f $IMAGE ]; then
+    curl -O $URL
 fi
 
 # Adding 500 MB so we can install Java
+# First resize the image, then the file system
 qemu-img resize $IMAGE +500M
 sudo qemu-nbd --connect=/dev/nbd0 $IMAGE
-
 sudo sfdisk -d /dev/nbd0 > s
 echo 'Please edit the file partitions'
 read a
@@ -20,39 +23,38 @@ sudo resize2fs /dev/nbd0p1
 rm s
 
 # Mount image and chroot to it
-sudo mount /dev/nbd0p1 /mnt
-sudo chroot /mnt
-mount -t proc proc proc/
-mount -t sysfs sys sys/
-mount -o bind /dev dev/
+TMP_DIR=`mktemp -d`
+sudo mount /dev/nbd0p1 $TMP_DIR
+sudo mount -t proc proc $TMP_DIR/proc/
+sudo mount -t sysfs sys $TMP_DIR/sys/
+sudo mount -o bind /dev $TMP_DIR/dev/
 
-apt-get -q update
-sudo apt-get install -y -q build-essential default-jdk ant python-dev openssh-server
-
-# # Unattended Oracle Java install
-# echo debconf shared/accepted-oracle-license-v1-1 select true | sudo debconf-set-selections
-# #echo debconf shared/accepted-oracle-license-v1-1 seen true | sudo debconf-set-selections
-# add-apt-repository -y ppa:webupd8team/java
-# apt-get -q update
-# apt-get -y -q install oracle-java8-installer ant
+sudo chroot $TMP_DIR apt-get -q update
+sudo chroot $TMP_DIR apt-get install -y -q build-essential default-jdk ant python-dev openssh-server ant
 
 # Install FloodLight 0.90
-cd /usr/local/bin
-wget http://floodlight-download.projectfloodlight.org/files/floodlight-source-0.90.tar.gz
-tar xzf floodlight-source-0.90.tar.gz
-cd floodlight-0.90
-ant
+sudo chroot $TMP_DIR curl -o /usr/local/src/floodlight-0.90.tar.gz http://floodlight-download.projectfloodlight.org/files/floodlight-source-0.90.tar.gz
+sudo chroot $TMP_DIR tar xzvf /usr/local/src/floodlight-0.90.tar.gz -C /usr/local/src
+sudo chroot $TMP_DIR ant -buildfile /usr/local/src/floodlight-0.90/build.xml
 
-cat > /etc/rc.local <<EOF
-#!/bin/sh -e
+sudo chroot $TMP_DIR bash -c 'cat > /etc/init/floodlight.conf << EOF
+description "FloodLight OpenFlow Controller"
 
-java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar > /var/log/floodlight.log &
+start on runlevel [2345]
+stop on runlevel [!2345]
 
-exit 0
+script
+  exec start-stop-daemon --start --exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar > /var/log/floodlight.log &
+end script
+EOF'
 
-EOF
+echo 'Hope everything went well'
+read a
 
-chmod + /etc/rc.local
-
-# Get out of chroot
-exit 0
+# Unmount & remove tmp dir
+sudo qemu-nbd --disconnect /dev/nbd0
+sudo umount $TMP_DIR/proc
+sudo umount $TMP_DIR/sys
+sudo umount $TMP_DIR/dev
+sudo umount $TMP_DIR
+rmdir $TMP_DIR
