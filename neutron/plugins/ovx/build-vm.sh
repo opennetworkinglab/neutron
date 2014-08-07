@@ -48,9 +48,6 @@ script
 end script
 EOF'
 
-echo 'Hope everything went well'
-read a
-
 # Unmount & remove tmp dir
 sudo qemu-nbd --disconnect /dev/nbd0
 sudo umount $TMP_DIR/proc
