@@ -113,7 +113,6 @@ class OVXNeutronAgent():
         return resync
 
     def daemon_loop(self):
-        print 'hello'
         sync = True
         ports = set()
 
