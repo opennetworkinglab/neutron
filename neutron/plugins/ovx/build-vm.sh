@@ -34,8 +34,8 @@ rm s
 # Mount image and chroot to it
 TMP_DIR=`mktemp -d`
 sudo mount /dev/nbd0p1 $TMP_DIR
-mv $TMP_DIR/etc/resolv.conf $TMP_DIR/etc/resolv.conf.original
-cp /etc/resolv.conf $TMP_DIR/etc/
+sudo mv $TMP_DIR/etc/resolv.conf $TMP_DIR/etc/resolv.conf.original
+sudo cp /etc/resolv.conf $TMP_DIR/etc/
 sudo mount -t proc proc $TMP_DIR/proc/
 sudo mount -t sysfs sys $TMP_DIR/sys/
 sudo mount -o bind /dev $TMP_DIR/dev/
@@ -60,8 +60,8 @@ end script
 EOF'
 
 # Unmount & remove tmp dir
-rm $TMP_DIR/etc/resolv.conf
-mv $TMP_DIR/etc/resolv.conf.original $TMP_DIR/etc/resolv.conf
+sudo rm $TMP_DIR/etc/resolv.conf
+sudo mv $TMP_DIR/etc/resolv.conf.original $TMP_DIR/etc/resolv.conf
 sudo qemu-nbd --disconnect /dev/nbd0
 sudo umount $TMP_DIR/proc
 sudo umount $TMP_DIR/sys
