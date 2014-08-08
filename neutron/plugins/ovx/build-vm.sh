@@ -22,6 +22,7 @@ fi
 # Adding 500 MB so we can install Java
 # First resize the image, then the file system
 qemu-img resize $IMAGE +500M
+# Sometimes qemu-nbd wants the full path to the image
 sudo qemu-nbd --connect=/dev/nbd0 `pwd`/$IMAGE
 sudo sfdisk -d /dev/nbd0 > s
 echo 'Please edit the file partitions'
@@ -33,6 +34,7 @@ rm s
 # Mount image and chroot to it
 TMP_DIR=`mktemp -d`
 sudo mount /dev/nbd0p1 $TMP_DIR
+cp /etc/resolv.conf $TMP_DIR/etc/resolv.conf
 sudo mount -t proc proc $TMP_DIR/proc/
 sudo mount -t sysfs sys $TMP_DIR/sys/
 sudo mount -o bind /dev $TMP_DIR/dev/
