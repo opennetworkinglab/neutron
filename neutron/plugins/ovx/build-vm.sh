@@ -7,8 +7,9 @@ IMAGE=ubuntu-14.04-server-cloudimg-amd64-disk1.img
 URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
 
 # Install dependencies
-# util-linux contains sfdisk
-sudo apt-get -y -q install qemu util-linux
+#   * qemu-utils needed for qemu-nbd
+#   * util-linux needed for sfdisk
+sudo apt-get -y -q install qemu-utils util-linux
 
 # Download image
 if [ ! -f $IMAGE ]; then
