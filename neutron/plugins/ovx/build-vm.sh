@@ -11,6 +11,9 @@ URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
 #   * util-linux needed for sfdisk
 sudo apt-get -y -q install qemu-utils util-linux
 
+# Load nbd kernel module
+sudo modprobe nbd
+
 # Download image
 if [ ! -f $IMAGE ]; then
     curl -O $URL
@@ -19,7 +22,7 @@ fi
 # Adding 500 MB so we can install Java
 # First resize the image, then the file system
 qemu-img resize $IMAGE +500M
-sudo qemu-nbd --connect=/dev/nbd0 $IMAGE
+sudo qemu-nbd --connect=/dev/nbd0 `pwd`/$IMAGE
 sudo sfdisk -d /dev/nbd0 > s
 echo 'Please edit the file partitions'
 read a
