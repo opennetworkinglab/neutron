@@ -146,16 +146,21 @@ class OVXNeutronAgent():
 
 
 def main():
+    print '1'
     cfg.CONF(project='neutron')
+    print '2'
 
     logging_config.setup_logging(cfg.CONF)
+    print '3'
 
     data_bridge = cfg.CONF.OVS.data_bridge
     control_bridge = cfg.CONF.OVS.ctrl_bridge
     root_helper = cfg.CONF.AGENT.root_helper
     polling_interval = cfg.CONF.AGENT.polling_interval
+    print '4'
     
     agent = OVXNeutronAgent(data_bridge, control_bridge, root_helper, polling_interval)
+    print '5'
 
     LOG.info(_("Agent initialized successfully, now running... "))
     agent.daemon_loop()
