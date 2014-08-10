@@ -149,9 +149,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         #portbindings_db.register_port_dict_function()
         # Init RPC
         self.setup_rpc()
-        # Create empty control network
+        # Setup empty control network
         self.ctrl_network = self._setup_ctrl_network()
-        LOG.info("+++ CTRL NETWORK +++ %s" % self.ctrl_network)
         # Controller manager
         self.ctrl_manager = ControllerManager(self.ctrl_network)
 
@@ -389,7 +388,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug("Setting up control network")
         context = ctx.get_admin_context()
         # TODO: add tenant_id? (lookup by project_id)
-        # TODO: check if ctrl network already exists!
         network = {
             'network': {
                 'name': 'OVX_ctrl_network',
@@ -411,11 +409,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         }
 
         # Check if control network already exists
-        filters = {'name': ['OVX_ctrl_network']}
-        LOG.info("+++ EVERYTHIN %s +++" % super(OVXNeutronPlugin, self).get_networks(context))
-        
+        filters = {'name': ['OVX_ctrl_network']}        
         ctrl_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
-        LOG.info("+++ CTRL_NETS %s +++" % ctrl_nets)
         if len(ctrl_nets) != 0:
             LOG.info("Retrieved control network from db")
             return ctrl_nets[0]
