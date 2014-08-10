@@ -415,6 +415,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.info("+++ EVERYTHIN %s +++" % super(OVXNeutronPlugin, self).get_networks(context))
         
         ctrl_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
+        LOG.info("+++ CTRL_NETS %s +++" % ctrl_nets)
         if len(ctrl_nets) != 0:
             LOG.info("Retrieved control network from db")
             return ctrl_nets[0]
