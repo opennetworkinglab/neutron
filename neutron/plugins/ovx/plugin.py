@@ -411,7 +411,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         }
 
         # Check if control network already exists
-        filters = {'name': 'OVX_ctrl_network'}
+        filters = {'name': ['OVX_ctrl_network']}
         LOG.info("+++ EVERYTHIN %s +++" % super(OVXNeutronPlugin, self).get_networks(context))
         
         ctrl_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
