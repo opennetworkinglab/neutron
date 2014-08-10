@@ -104,7 +104,7 @@ class ControllerManager():
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
         except Exception as e:
-            LOG.error("Could not initialize Nova bindings. Check your config.")
+            LOG.error("Could not initialize Nova bindings. Check your config. %s)" % e)
             sys.exit(1)
 
     def spawn(self, name):
@@ -118,6 +118,7 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to obtain IP address
+        # TODO: need to time out after some time
         while self.ctrl_network_name not in server.addresses:
             LOG.error('WAITING %s' % server.addresses)
             time.sleep(1)
@@ -205,6 +206,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                         :file:`neutron/api/v2/attributes.py`.
         """
         LOG.debug("Neutron OVX: update network")
+        
+        if id == self.ctrl_network['id']:
+            raise Exception("Illegal request: cannot update control network")
+        
         # requested admin state
         req_state = network['network']['admin_state_up']
         # lookup old network state
@@ -228,12 +233,18 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param id: UUID representing the network to delete.
         """
         LOG.debug("Neutron OVX: delete network")
+
+        if id == self.ctrl_network['id']:
+            raise Exception("Illegal request: cannot delete control network")
+        
         with context.session.begin(subtransactions=True):
             # Lookup OVX tenant ID
+            # TODO: remove network even if tenant id is invalid for OVX
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
             self.ovx_client.removeNetwork(ovx_tenant_id)
 
             # Lookup server ID of OpenFlow controller
+            # TODO: remove controller
             ovx_controller = ovxdb.get_ovx_controller(context.session, id)
             #self.ctrl_manager.delete(ovx_controller)
 
@@ -377,6 +388,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug("Setting up control network")
         context = ctx.get_admin_context()
         # TODO: add tenant_id? (lookup by project_id)
+        # TODO: check if ctrl network already exists!
         network = {
             'network': {
                 'name': 'OVX_ctrl_network',
