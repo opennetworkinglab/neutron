@@ -151,6 +151,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.setup_rpc()
         # Create empty control network
         self.ctrl_network = self._setup_ctrl_network()
+        LOG.info("+++ CTRL NETWORK +++ %s" % self.ctrl_network)
         # Controller manager
         self.ctrl_manager = ControllerManager(self.ctrl_network)
 
