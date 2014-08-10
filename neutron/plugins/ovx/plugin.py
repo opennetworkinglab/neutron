@@ -112,7 +112,7 @@ class ControllerManager():
         Returns the Nova server ID and IP address."""
         nic_config = {'net-id': self.ctrl_network_id}
         # Can also set 'fixed_ip' if needed
-        server = self._nova.servers.create(name='OVX-%s' % name,
+        server = self._nova.servers.create(name='OVX_%s' % name,
                                            image=self._image,
                                            flavor=self._flavor,
                                            nics=[nic_config])
@@ -244,9 +244,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self.ovx_client.removeNetwork(ovx_tenant_id)
 
             # Lookup server ID of OpenFlow controller
-            # TODO: remove controller
             ovx_controller = ovxdb.get_ovx_controller(context.session, id)
-            #self.ctrl_manager.delete(ovx_controller)
+            self.ctrl_manager.delete(ovx_controller)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_network(context, id)
