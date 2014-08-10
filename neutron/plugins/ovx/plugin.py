@@ -384,7 +384,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return tenant_id
 
     def _setup_ctrl_network(self):
-        """Creates network in Neutron, return network dict."""
+        """Creates control network in Neutron database, return network dict."""
         LOG.debug("Setting up control network")
         context = ctx.get_admin_context()
         # TODO: add tenant_id? (lookup by project_id)
@@ -408,6 +408,13 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 'enable_dhcp': True
             }
         }
+
+        # Check if control network already exists
+        filters = {'name': 'OVX_ctrl_network'}
+        ctrl_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
+        if len(ctrl_nets) != 0:
+            LOG.info("Retrieved control network from db")
+            return ctrl_nets[0]
 
         with context.session.begin(subtransactions=True):
             # Register network and subnet in db
