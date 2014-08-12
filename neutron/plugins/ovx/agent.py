@@ -59,7 +59,7 @@ class OVXNeutronAgent():
         self.agent_state = {
             'binary': 'neutron-ovx-agent',
             'api_server': '%s:%s' % (cfg.CONF.OVX.api_host, cfg.CONF.OVX.api_port),
-            'openflow_server': '%s:%s' % (cfg.CONF.OVX.of_host, cfg.CONF.OVX.of_port),
+            'openflow_server': 'tcp:%s:%s' % (cfg.CONF.OVX.of_host, cfg.CONF.OVX.of_port),
             'topic': q_const.L2_AGENT_TOPIC,
             'host': cfg.CONF.host,
             'configurations': {},

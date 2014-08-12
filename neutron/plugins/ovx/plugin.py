@@ -236,16 +236,16 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         if id == self.ctrl_network['id']:
             raise Exception("Illegal request: cannot delete control network")
-        
-        with context.session.begin(subtransactions=True):
-            # Lookup OVX tenant ID
-            # TODO: remove network even if tenant id is invalid for OVX
-            ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
-            self.ovx_client.removeNetwork(ovx_tenant_id)
 
-            # Lookup server ID of OpenFlow controller
+        with context.session.begin(subtransactions=True):
+            # Need to remove the controller before the network,
+            # as Nova will also delete the port in Neutron
             ovx_controller = ovxdb.get_ovx_controller(context.session, id)
             self.ctrl_manager.delete(ovx_controller)
+
+            # Remove network from OVX
+            ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
+            self.ovx_client.removeNetwork(ovx_tenant_id)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_network(context, id)
