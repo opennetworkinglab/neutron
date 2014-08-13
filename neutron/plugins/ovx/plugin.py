@@ -128,7 +128,10 @@ class ControllerManager():
         return (controller_id, controller_ip)
 
     def delete(self, controller_id):
-        self._nova.servers.find(id=controller_id).delete()
+        try:
+            self._nova.servers.find(id=controller_id).delete()
+        except:
+            LOG.error("Could not remove VM %s" % controller_id)
                     
 class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        agents_db.AgentDbMixin,
