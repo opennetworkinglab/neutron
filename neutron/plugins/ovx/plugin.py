@@ -333,19 +333,21 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug("Neutron OVX: delete port")
         
         with context.session.begin(subtransactions=True):
-            # Lookup OVX tenant ID, virtual dpid and virtual port number
+            # Remove port in OVX only if it's a data port
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
-            ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
-            (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
-            # If OVX throws an exception, assume the virtual port was already gone in OVX
-            # as the physical port removal (by nova) triggers the virtual port removal.
-            # Any other exception (e.g., OVX is down) will lead to failure of this method.
-            # A better way of handling this is by having the agent signal the removal of the port.
-            # Not sure if this solution works when nova deletes a vm though.
-            try:
-                self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
-            except ovxlib.OVXException:
-                LOG.warn("Could not remove port. Probably because physical port was already removed.")
+            if neutron_network_id != self.ctrl_network['id']:
+                # Lookup OVX tenant ID, virtual dpid and virtual port number
+                ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
+                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
+                # If OVX throws an exception, assume the virtual port was already gone in OVX
+                # as the physical port removal (by nova) triggers the virtual port removal.
+                # Any other exception (e.g., OVX is down) will lead to failure of this method.
+                # A better way of handling this is by having the agent signal the removal of the port.
+                # Not sure if this solution works when nova deletes a vm though.
+                try:
+                    self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                except ovxlib.OVXException:
+                    LOG.warn("Could not remove port. Probably because physical port was already removed.")
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
