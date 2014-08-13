@@ -179,14 +179,18 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'])
             
-            ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
-            # Subnet value is irrelevant to OVX
-            subnet = '10.0.0.0/24'
-            
-            ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
-            # Start network if requested
-            if net_db['admin_state_up']:
-                self.ovx_client.startNetwork(ovx_tenant_id)
+            try:
+                ctrl = 'tcp:%s:%s' % (controller_ip, cfg.CONF.NOVA.image_port)
+                # Subnet value is irrelevant to OVX
+                subnet = '10.0.0.0/24'
+
+                ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
+                # Start network if requested
+                if net_db['admin_state_up']:
+                    self.ovx_client.startNetwork(ovx_tenant_id)
+            except OVXException:
+                self.ctrl_manager.delete(controller_id)
+                raise
 
             # Save mapping between Neutron network ID and OVX tenant ID
             ovxdb.add_ovx_network(context.session, net_db['id'], ovx_tenant_id, controller_id)
@@ -398,10 +402,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             'subnet': {
                 'name': 'OVX_ctrl_subnet',
                 'ip_version': 4,
-                'cidr': '192.168.83.0/16',
+                'cidr': '192.168.83.0/24',
                 'gateway_ip': None,
                 'dns_nameservers': [],
-                'allocation_pools': [{'start': '192.168.83.2', 'end': '192.168.83.254'}],
+                'allocation_pools': [{'start': '192.168.83.100', 'end': '192.168.83.254'}],
                 'host_routes': [],
                 'enable_dhcp': True
             }
