@@ -62,9 +62,9 @@ EOF'
 # Unmount & remove tmp dir
 sudo rm $TMP_DIR/etc/resolv.conf
 sudo mv $TMP_DIR/etc/resolv.conf.original $TMP_DIR/etc/resolv.conf
-sudo qemu-nbd --disconnect /dev/nbd0
 sudo umount $TMP_DIR/proc
 sudo umount $TMP_DIR/sys
 sudo umount $TMP_DIR/dev
 sudo umount $TMP_DIR
 rmdir $TMP_DIR
+sudo qemu-nbd --disconnect /dev/nbd0
