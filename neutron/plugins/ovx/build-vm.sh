@@ -55,7 +55,7 @@ start on runlevel [2345]
 stop on runlevel [!2345]
 
 script
-  exec start-stop-daemon --start --exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar > /var/log/floodlight.log &
+  exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar > /var/log/floodlight.log &
 end script
 EOF'
 
