@@ -3,8 +3,11 @@
 # Example script to build a VM image that starts
 # an OpenFlow controller (FloodLight in this case) at boot.
 
-IMAGE=ubuntu-14.04-server-cloudimg-amd64-disk1.img
-URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
+IMAGE=saucy-server-cloudimg-amd64-disk1.img
+URL=https://cloud-images.ubuntu.com/saucy/current/$IMAGE
+
+#IMAGE=ubuntu-14.04-server-cloudimg-amd64-disk1.img
+#URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
 
 # Install dependencies
 #   * qemu-utils needed for qemu-nbd
