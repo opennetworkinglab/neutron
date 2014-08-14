@@ -3,11 +3,12 @@
 # Example script to build a VM image that starts
 # an OpenFlow controller (FloodLight in this case) at boot.
 
-IMAGE=saucy-server-cloudimg-amd64-disk1.img
-URL=https://cloud-images.ubuntu.com/saucy/current/$IMAGE
-
-#IMAGE=ubuntu-14.04-server-cloudimg-amd64-disk1.img
-#URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
+#IMAGE=precise-server-cloudimg-amd64-disk1.img
+#URL=https://cloud-images.ubuntu.com/precise/current/$IMAGE
+#IMAGE=saucy-server-cloudimg-amd64-disk1.img
+#URL=https://cloud-images.ubuntu.com/saucy/current/$IMAGE
+IMAGE=ubuntu-14.04-server-cloudimg-amd64-disk1.img
+URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
 
 # Install dependencies
 #   * qemu-utils needed for qemu-nbd
@@ -43,6 +44,7 @@ sudo mount -t proc proc $TMP_DIR/proc/
 sudo mount -t sysfs sys $TMP_DIR/sys/
 sudo mount -o bind /dev $TMP_DIR/dev/
 
+# Install java
 sudo chroot $TMP_DIR apt-get -q update
 sudo chroot $TMP_DIR apt-get install -y -q build-essential default-jdk ant python-dev openssh-server ant
 
@@ -60,6 +62,21 @@ stop on runlevel [!2345]
 script
   exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar > /var/log/floodlight.log &
 end script
+EOF'
+
+# Work around nova / cloud-init bug
+sudo rm $TMP_DIR/etc/network/interfaces
+sudo chroot $TMP_DIR bash -c 'cat > /etc/network/interfaces << EOF
+# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# The primary network interface
+auto eth0
+iface eth0 inet dhcp
 EOF'
 
 # Unmount & remove tmp dir
