@@ -29,7 +29,8 @@ nova_opts = [
     cfg.StrOpt('auth_url', default='http://localhost:5000/v2.0/', help=_('Nova authentication URL.')),
     cfg.StrOpt('image_name', default='ovx-floodlight', help=_('SDN controller image name.')),
     cfg.IntOpt('image_port', default=6633, help=_('OpenFlow port of SDN controller image.')),
-    cfg.StrOpt('flavor', default='m1.small', help=_('Machine flavor on which to run SDN controller.'))
+    cfg.StrOpt('flavor', default='m1.small', help=_('Machine flavor on which to run SDN controller.')),
+    cfg.StrOpt('key_name', default=None, help=_('Name of keypair to inject into controller instance.'))
 ]
 
 ovs_opts = [

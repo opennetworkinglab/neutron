@@ -103,6 +103,10 @@ class ControllerManager():
         try:
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
+            if cfg.CONF.NOVA.key_name == None:
+                self._key_name = None
+            else:
+                self._key_name = self._nova.keypairs.find(name=cfg.CONF.key_name)
         except Exception as e:
             LOG.error("Could not initialize Nova bindings. Check your config. %s)" % e)
             sys.exit(1)
@@ -115,6 +119,7 @@ class ControllerManager():
         server = self._nova.servers.create(name='OVX_%s' % name,
                                            image=self._image,
                                            flavor=self._flavor,
+                                           key_name=None,
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to obtain IP address
