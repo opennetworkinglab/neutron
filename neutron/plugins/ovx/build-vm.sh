@@ -60,24 +60,24 @@ start on runlevel [2345]
 stop on runlevel [!2345]
 
 script
-  exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar > /var/log/floodlight.log &
+  exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar &
 end script
 EOF'
 
-# Work around nova / cloud-init bug
-sudo rm $TMP_DIR/etc/network/interfaces
-sudo chroot $TMP_DIR bash -c 'cat > /etc/network/interfaces << EOF
-# This file describes the network interfaces available on your system
-# and how to activate them. For more information, see interfaces(5).
+# # Work around nova / cloud-init bug
+# sudo rm $TMP_DIR/etc/network/interfaces
+# sudo chroot $TMP_DIR bash -c 'cat > /etc/network/interfaces << EOF
+# # This file describes the network interfaces available on your system
+# # and how to activate them. For more information, see interfaces(5).
 
-# The loopback network interface
-auto lo
-iface lo inet loopback
+# # The loopback network interface
+# auto lo
+# iface lo inet loopback
 
-# The primary network interface
-auto eth0
-iface eth0 inet dhcp
-EOF'
+# # The primary network interface
+# auto eth0
+# iface eth0 inet dhcp
+# EOF'
 
 # Unmount & remove tmp dir
 sudo rm $TMP_DIR/etc/resolv.conf
