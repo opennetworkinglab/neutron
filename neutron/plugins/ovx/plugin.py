@@ -106,7 +106,7 @@ class ControllerManager():
             if cfg.CONF.NOVA.key_name == None:
                 self._key_name = None
             else:
-                self._key_name = self._nova.keypairs.find(name=cfg.CONF.key_name)
+                self._key_name = self._nova.keypairs.find(name=cfg.CONF.NOVA.key_name)
         except Exception as e:
             LOG.error("Could not initialize Nova bindings. Check your config. %s)" % e)
             sys.exit(1)
