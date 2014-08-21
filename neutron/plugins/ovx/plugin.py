@@ -194,7 +194,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # Start network if requested
                 if net_db['admin_state_up']:
                     self.ovx_client.startNetwork(ovx_tenant_id)
-            except ovxlib.OVXException:
+            except Exception:
                 self.ctrl_manager.delete(controller_id)
                 raise
 

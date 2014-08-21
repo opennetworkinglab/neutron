@@ -60,7 +60,7 @@ start on runlevel [2345]
 stop on runlevel [!2345]
 
 script
-  exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar &
+  exec /usr/bin/java -jar /usr/local/src/floodlight-0.90/target/floodlight.jar > /var/log/floodlight.log 2>&1 &
 end script
 EOF'
 
