@@ -104,9 +104,10 @@ class ControllerManager():
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
             # Check if the key name is found, don't save the ref (novaclient wants the name)
-            self._nova.keypairs.find(name=cfg.CONF.NOVA.key_name)
+            if cfg.CONF.NOVA.key_name:
+                self._nova.keypairs.find(name=cfg.CONF.NOVA.key_name)
         except Exception as e:
-            LOG.error("Could not initialize Nova bindings. Check your config. %s)" % e)
+            LOG.error("Could not initialize Nova bindings. Check your config. (%s)" % e)
             sys.exit(1)
 
     def spawn(self, name):
