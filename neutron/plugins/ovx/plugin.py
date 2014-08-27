@@ -74,7 +74,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session,
                                                     neutron_network_id)
 
-            # Create OVX port
+            # Create port in OVX
             (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
 
             # Stop port if requested (port is started by default in OVX)
@@ -93,6 +93,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
     inside the control network."""
+    
     def __init__(self, ctrl_network):
         self.ctrl_network_id = ctrl_network['id']
         self.ctrl_network_name = ctrl_network['name']
@@ -100,6 +101,7 @@ class ControllerManager():
         self._nova = nova_client(username=cfg.CONF.NOVA.username, api_key=cfg.CONF.NOVA.password,
                                 project_id=cfg.CONF.NOVA.project_id, auth_url=cfg.CONF.NOVA.auth_url,
                                 service_type="compute")
+        # Check if Nova config is correct
         try:
             self._image = self._nova.images.find(name=cfg.CONF.NOVA.image_name)
             self._flavor = self._nova.flavors.find(name=cfg.CONF.NOVA.flavor)
@@ -113,6 +115,8 @@ class ControllerManager():
     def spawn(self, name):
         """Spawns SDN controller inside the control network.
         Returns the Nova server ID and IP address."""
+
+        # Connect controller to control network
         nic_config = {'net-id': self.ctrl_network_id}
         # Can also set 'fixed_ip' if needed
         server = self._nova.servers.create(name='OVX_%s' % name,
@@ -122,13 +126,20 @@ class ControllerManager():
                                            nics=[nic_config])
         controller_id = server.id
         # TODO: need a good way to obtain IP address
-        # TODO: need to time out after some time
+        timer = 0
         while self.ctrl_network_name not in server.addresses:
-            LOG.error('WAITING %s' % server.addresses)
             time.sleep(1)
+            # If we don't keep on searching for the controller_id,
+            # we may never get an IP
             server = self._nova.servers.find(id=controller_id)
+            if timer > cfg.CONF.NOVA.timeout:
+                raise Exception("Could not start controller in time.")
+            timer += 1
+
+        # Fetch IP address of controller instance
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
         LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
+        
         return (controller_id, controller_ip)
 
     def delete(self, controller_id):
@@ -184,6 +195,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Save in db
             net_db = super(OVXNeutronPlugin, self).create_network(context, network)
 
+            # Spawn controller
             (controller_id, controller_ip) = self.ctrl_manager.spawn(net_db['id'])
             
             try:
@@ -221,21 +233,25 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         if id == self.ctrl_network['id']:
             raise Exception("Illegal request: cannot update control network")
         
-        # requested admin state
-        req_state = network['network']['admin_state_up']
-        # lookup old network state
-        net_db = super(OVXNeutronPlugin, self).get_network(context, id)
-        db_state = net_db['admin_state_up']
-        # Start or stop network as needed
-        if req_state != db_state:
-            ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
-            if req_state:
-                self.ovx_client.startNetwork(ovx_tenant_id)
-            else:
-                self.ovx_client.stopNetwork(ovx_tenant_id)
+        with context.session.begin(subtransactions=True):
+            # Requested admin state
+            req_state = network['network'].get('admin_state_up')
+            # Lookup old network state
+            net_db = super(OVXNeutronPlugin, self).get_network(context, id)
+            db_state = net_db['admin_state_up']
+            
+            # Start or stop network as requested
+            if (req_state != None) and (req_state != db_state):
+                ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
+                if req_state:
+                    self.ovx_client.startNetwork(ovx_tenant_id)
+                else:
+                    self.ovx_client.stopNetwork(ovx_tenant_id)
 
-        # Save network to db
-        return super(OVXNeutronPlugin, self).update_network(context, id, network)
+            # Save network to db
+            neutron_network = super(OVXNeutronPlugin, self).update_network(context, id, network)
+
+        return neutron_network
 
     def delete_network(self, context, id):
         """Delete a network.
@@ -278,10 +294,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent RPC
             port['port']['status'] = q_const.PORT_STATUS_DOWN
-            
-            # Plugin DB - Port Create and Return port
+
+            # Create port in db
             neutron_port = super(OVXNeutronPlugin, self).create_port(context, port)
 
+            # Store the bridge to connect to in the port bindings
             if port['port']['network_id'] == self.ctrl_network['id']:
                 LOG.debug("Setting port binding to ctrl for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.ctrl_bridge
@@ -294,7 +311,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Can't create the port in OVX yet, we need the dpid & port
             # Wait for agent to tell us
             
-        # Plugin DB - Port Create and Return port
         return neutron_port
 
     def update_port(self, context, id, port):
@@ -309,25 +325,26 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """
         LOG.debug("Neutron OVX: update port")
         
-        # TODO: log error when trying to change network_id or mac_address
-        # requested admin state
-        req_state = port['port'].get('admin_state_up')
-        # lookup old port state
-        port_db = super(OVXNeutronPlugin, self).get_port(context, id)
-        db_state = port_db['admin_state_up']
-        # Start or stop port as needed
-        if (req_state != None) and (req_state != db_state):
-            ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, port_db['network_id'])
-            (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
-            if req_state:
-                self.ovx_client.startPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
-            else:
-                self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+        with context.session.begin(subtransactions=True):
+            # Requested admin state
+            req_state = port['port'].get('admin_state_up')
+            # Lookup old port state
+            port_db = super(OVXNeutronPlugin, self).get_port(context, id)
+            db_state = port_db['admin_state_up']
+        
+            # Start or stop port as requested
+            if (req_state != None) and (req_state != db_state):
+                ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, port_db['network_id'])
+                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
+                if req_state:
+                    self.ovx_client.startPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                else:
+                    self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
-        # Save port to db
-        neutron_port = super(OVXNeutronPlugin, self).update_port(context, id, port)
+            # Save port to db
+            neutron_port = super(OVXNeutronPlugin, self).update_port(context, id, port)
 
-        self._process_portbindings_create_and_update(context, port['port'], neutron_port)
+            self._process_portbindings_create_and_update(context, port['port'], neutron_port)
 
         return neutron_port
     
@@ -342,6 +359,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         with context.session.begin(subtransactions=True):
             # Remove port in OVX only if it's a data port
             neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
+            
             if neutron_network_id != self.ctrl_network['id']:
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
                 ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
