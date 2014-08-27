@@ -31,7 +31,7 @@ nova_opts = [
     cfg.IntOpt('image_port', default=6633, help=_('OpenFlow port of SDN controller image.')),
     cfg.StrOpt('flavor', default='m1.small', help=_('Machine flavor on which to run SDN controller.')),
     cfg.StrOpt('key_name', default=None, help=_('Name of keypair to inject into controller instance.')),
-    cfg.IntPort('timeout', default=30, help=_('Number of seconds to try start the controller instance.'))
+    cfg.IntOpt('timeout', default=30, help=_('Number of seconds to try start the controller instance.'))
 ]
 
 ovs_opts = [
