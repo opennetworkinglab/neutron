@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 # Example script to build a VM image that starts
 # an OpenFlow controller (FloodLight in this case) at boot.
 

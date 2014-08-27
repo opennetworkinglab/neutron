@@ -46,7 +46,7 @@ class OVXNeutronAgent():
     def __init__(self, data_bridge, ctrl_bridge, root_helper, polling_interval):
         LOG.info(_("Started OVX Neutron Agent"))
 
-        # Lookup or create bridges for data and control network
+        # Lookup bridges for data and control network
         # Regular compute nodes will be plugged into the data bridge
         # Virtual network controllers will be plugged into the control bridge
         controller = 'tcp:%s:%s' % (cfg.CONF.OVX.of_host, cfg.CONF.OVX.of_port)
@@ -157,7 +157,7 @@ def main():
     
     agent = OVXNeutronAgent(data_bridge, control_bridge, root_helper, polling_interval)
 
-    LOG.info(_("Agent initialized successfully, now running... "))
+    LOG.info(_("OVX agent initialized successfully, now running... "))
     agent.daemon_loop()
     sys.exit(0)
 
