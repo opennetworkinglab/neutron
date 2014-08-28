@@ -36,7 +36,7 @@ qemu-img resize $IMAGE +500M
 sudo qemu-nbd --connect=/dev/nbd0 `pwd`/$IMAGE
 PTABLE=`mktemp`
 sudo sfdisk -d /dev/nbd0 > $PTABLE
-sed 's/4192256/4192256/' $PTABLE
+sed 's/4192256/5192256/' $PTABLE
 sudo sfdisk /dev/nbd0 < $PTABLE
 rm $PTABLE
 sudo e2fsck -f /dev/nbd0p1
