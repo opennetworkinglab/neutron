@@ -40,7 +40,7 @@ from neutron.plugins.common import constants as svc_constants
 from neutron.plugins.ovx import ovxlib
 from neutron.plugins.ovx import ovxdb
 from neutron.plugins.ovx.common import config
-from neutron.plugins.ovx.common import ovx_constants
+from neutron.plugins.ovx.common import constants as ovx_constants
 from novaclient.v1_1.client import Client as nova_client
 
 LOG = logging.getLogger(__name__)
