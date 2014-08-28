@@ -5,12 +5,16 @@ set -e
 # Example script to build a VM image that starts
 # an OpenFlow controller (FloodLight in this case) at boot.
 
+# Ubuntu cloud image to use
 #IMAGE=precise-server-cloudimg-amd64-disk1.img
 #URL=https://cloud-images.ubuntu.com/precise/current/$IMAGE
 #IMAGE=saucy-server-cloudimg-amd64-disk1.img
 #URL=https://cloud-images.ubuntu.com/saucy/current/$IMAGE
 IMAGE=ubuntu-14.04-server-cloudimg-amd64-disk1.img
 URL=http://cloud-images.ubuntu.com/releases/14.04/release/$IMAGE
+# Old and new size of root filesystem (in sectors)
+OLD_SIZE=4192256
+NEW_SIZE=5192256
 
 # Install dependencies
 #   * qemu-utils needed for qemu-nbd
@@ -31,8 +35,7 @@ qemu-img resize $IMAGE +500M
 # Sometimes qemu-nbd wants the full path to the image
 sudo qemu-nbd --connect=/dev/nbd0 `pwd`/$IMAGE
 sudo sfdisk -d /dev/nbd0 > s
-echo 'Please edit the file partitions'
-read a
+sudo sed 's/4192256/4192256/' s
 sudo e2fsck -f /dev/nbd0p1
 sudo resize2fs /dev/nbd0p1
 rm s
