@@ -431,6 +431,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         with context.session.begin(subtransactions=True):
             # Register control network and control subnet in db
             net = super(OVXNeutronPlugin, self).create_network(context, ovx_constants.CTRL_NETWORK)
+            subnet = ovx_constants.CTRL_SUBNET
             subnet['subnet']['network_id'] = net['id']
             subnet = super(OVXNeutronPlugin, self).create_subnet(context, ovx_constants.CTRL_SUBNET)
 
