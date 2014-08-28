@@ -14,7 +14,7 @@
 #    under the License.
 
 """
-Neutron Plug-in for OpenVirteX Network Virtualization Platform.
+Neutron plug-in for the OpenVirteX Network Virtualization Platform.
 This plugin will forward authenticated REST API calls to OVX.
 """
 
@@ -40,6 +40,7 @@ from neutron.plugins.common import constants as svc_constants
 from neutron.plugins.ovx import ovxlib
 from neutron.plugins.ovx import ovxdb
 from neutron.plugins.ovx.common import config
+from neutron.plugins.ovx.common import ovx_constants
 from novaclient.v1_1.client import Client as nova_client
 
 LOG = logging.getLogger(__name__)
@@ -414,41 +415,23 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         return tenant_id
 
     def _setup_ctrl_network(self):
-        """Creates control network in Neutron database, return network dict."""
+        """Creates control network in Neutron database, returns the network."""
+        
         LOG.debug("Setting up control network")
         context = ctx.get_admin_context()
-        # TODO: add tenant_id? (lookup by project_id)
-        network = {
-            'network': {
-                'name': 'OVX_ctrl_network',
-                'admin_state_up': True,
-                'shared': False
-                }
-        }
-        subnet = {
-            'subnet': {
-                'name': 'OVX_ctrl_subnet',
-                'ip_version': 4,
-                'cidr': '192.168.83.0/24',
-                'gateway_ip': None,
-                'dns_nameservers': [],
-                'allocation_pools': [{'start': '192.168.83.100', 'end': '192.168.83.254'}],
-                'host_routes': [],
-                'enable_dhcp': True
-            }
-        }
-
+        
         # Check if control network already exists
-        filters = {'name': ['OVX_ctrl_network']}        
+        ctrl_net_name = ovx_constants.CTRL_NETWORK['network']['name']
+        filters = {'name': [ctrl_net_name]}
         ctrl_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
         if len(ctrl_nets) != 0:
             LOG.info("Retrieved control network from db")
             return ctrl_nets[0]
 
         with context.session.begin(subtransactions=True):
-            # Register network and subnet in db
-            net = super(OVXNeutronPlugin, self).create_network(context, network)
+            # Register control network and control subnet in db
+            net = super(OVXNeutronPlugin, self).create_network(context, ovx_constants.CTRL_NETWORK)
             subnet['subnet']['network_id'] = net['id']
-            subnet = super(OVXNeutronPlugin, self).create_subnet(context, subnet)
+            subnet = super(OVXNeutronPlugin, self).create_subnet(context, ovx_constants.CTRL_SUBNET)
 
         return net
