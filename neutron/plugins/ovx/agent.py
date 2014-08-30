@@ -103,11 +103,17 @@ class OVXNeutronAgent():
 
         for port in ports:
             LOG.debug(_("Port %s added"), port)
-            
-            # Inform plugin that port is up
+
+            # Get the OVS port info
             ovs_port = self.data_bridge.get_vif_port_by_id(port)
             port_id = ovs_port.vif_id
+            port_name = ovs_port.port_name
             port_number = ovs_port.ofport
+            
+            # Setup VLAN tagging for port
+            self.data_bridge.run_vsctl(["--", "set", "port", port_name, "tag=418"])
+                        
+            # Inform plugin that port is up
             self.plugin_rpc.update_ports(self.context, port_id, self.dpid, port_number)
 
         return resync
