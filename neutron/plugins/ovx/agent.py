@@ -110,7 +110,7 @@ class OVXNeutronAgent():
                 new_ports = []
 
                 ports_added = []
-                for vif_port in self.int_br.get_vif_ports():
+                for vif_port in self.data_bridge.get_vif_ports():
                     port_id = vif_port.vif_id
                     new_ports.append(port_id)
                     if port_id not in cur_ports:
@@ -137,7 +137,7 @@ class OVXNeutronAgent():
                 LOG.exception(_("Error in agent event loop"))
                 self.need_sync = True
 
-            # Sleep till end of polling interval
+            # Sleep until end of polling interval
             elapsed = (time.time() - start)
             if (elapsed < self.polling_interval):
                 time.sleep(self.polling_interval - elapsed)
