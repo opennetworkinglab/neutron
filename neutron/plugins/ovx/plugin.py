@@ -61,35 +61,56 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         return q_rpc.PluginRpcDispatcher([self, agents_db.AgentExtRpcCallback()])
 
     def update_ports(self, rpc_context, **kwargs):
-        LOG.debug(_("Agent has port updates"))
-        port_id = kwargs.get('port_id')
+        LOG.debug(_("Agent has port updates, kwargs=" % kwargs))
+
         dpid = kwargs.get('dpid')
-        port_number = kwargs.get('port_number')
+        
+        for p in kwargs.get('ports_added', []):
+            port_id = p['id']
+            port_no = p['port_no']
+            
+            with rpc_context.session.begin(subtransactions=True):
+                # Lookup port
+                port_db = self.plugin.get_port(rpc_context, port_id)
 
-        with rpc_context.session.begin(subtransactions=True):
-            # Lookup port
-            port_db = self.plugin.get_port(rpc_context, port_id)
+                # Lookup OVX tenant ID
+                neutron_network_id = port_db['network_id']
+                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
 
-            # Lookup OVX tenant ID
-            neutron_network_id = port_db['network_id']
-            ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session,
-                                                    neutron_network_id)
+                # Create port in OVX
+                (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_no))
 
-            # Create port in OVX
-            (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_number))
+                # Stop port if requested (port is started by default in OVX)
+                if not port_db['admin_state_up']:
+                    self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
-            # Stop port if requested (port is started by default in OVX)
-            if not port_db['admin_state_up']:
-                self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                # Save mapping between Neutron port ID and OVX dpid and port number
+                ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
 
-            # Save mapping between Neutron port ID and OVX dpid and port number
-            ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
+                # Register host in OVX
+                self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
 
-            # Register host in OVX
-            self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
+                # Set port in active state in db
+                ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
+        
+        for p in kwargs.get('ports_removed', []):
+            port_id = p['id']
+            port_no = p['port_no']
+            
+            with rpc_context.session.begin(subtransactions=True):
+                # Lookup port
+                port_db = self.plugin.get_port(rpc_context, port_id)
 
-            # Set port in active state in db
-            ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
+                # Lookup OVX tenant ID
+                neutron_network_id = port_db['network_id']
+                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
+
+                # Lookup OVX vdpid and vport
+                neutron_port_id = port_db['id']
+                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(rpc_context.session, neutron_port_id)
+
+                # Remove port in OVX
+                (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request

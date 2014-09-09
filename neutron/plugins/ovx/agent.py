@@ -33,14 +33,18 @@ from neutron.plugins.ovx.common import config
 LOG = log.getLogger(__name__)
 
 class OVXPluginApi(agent_rpc.PluginApi):
-    def update_ports(self, context, port_id, dpid, port_number):
+    def update_ports(self, context, agent_id, dpid, ports_added, ports_removed):
         """RPC to update information of ports on Neutron Server."""
-        LOG.info(_("Update ports"))
+        
+        LOG.info(_("Update ports: added=%(added)s, "
+                   "removed=%(removed)s"),
+                 {'added': ports_added, 'removed': ports_removed})
         self.cast(context, self.make_msg('update_ports',
                                          topic=topics.AGENT,
-                                         port_id=port_id,
+                                         agent_id=agent_id,
                                          dpid=dpid,
-                                         port_number=port_number))
+                                         ports_added=ports_added,
+                                         ports_removed=ports_removed))
 
 class OVXNeutronAgent():
     def __init__(self, data_bridge, ctrl_bridge, root_helper, polling_interval):
@@ -55,6 +59,7 @@ class OVXNeutronAgent():
         
         self.polling_interval = polling_interval
         self.dpid = self.data_bridge.get_datapath_id()
+        self.need_sync = True
 
         self.agent_state = {
             'binary': 'neutron-ovx-agent',
@@ -92,54 +97,46 @@ class OVXNeutronAgent():
             self.agent_state.pop('start_flag', None)
         except Exception:
             LOG.error(_("Failed reporting state!"))
-            
-    def update_ports(self, registered_ports):
-        # We only care about compute node ports
-        ports = self.data_bridge.get_vif_port_set()
-        return ports - registered_ports
 
-    def process_ports(self, ports):
-        resync = False
-
-        for port in ports:
-            LOG.debug(_("Port %s added"), port)
-
-            # Get the OVS port info
-            ovs_port = self.data_bridge.get_vif_port_by_id(port)
-            port_id = ovs_port.vif_id
-            port_name = ovs_port.port_name
-            port_number = ovs_port.ofport
-            
-            # Setup VLAN tagging for port
-            self.data_bridge.run_vsctl(["--", "set", "port", port_name, "tag=418"])
-                        
-            # Inform plugin that port is up
-            self.plugin_rpc.update_ports(self.context, port_id, self.dpid, port_number)
-
-        return resync
-
+    def _vif_port_to_port_info(self, vif_port):
+        return dict(id=vif_port.vif_id, port_no=vif_port.ofport,
+                    port_name=vif_port.port_name)
+    
     def daemon_loop(self):
-        sync = True
-        ports = set()
-
-        LOG.info(_("OVX Agent RPC Daemon Started!"))
-
         while True:
             start = time.time()
-            if sync:
-                LOG.info(_("Agent out of sync with plugin!"))
-                ports.clear()
-                sync = False
+            try:
+                cur_ports = [] if self.need_sync else self.cur_ports
+                new_ports = []
 
-            added_ports = self.update_ports(ports)
+                ports_added = []
+                for vif_port in self.int_br.get_vif_ports():
+                    port_id = vif_port.vif_id
+                    new_ports.append(port_id)
+                    if port_id not in cur_ports:
+                        port_info = self._vif_port_to_port_info(vif_port)
+                        ports_added.append(port_info)
+                        #self.data_bridge.run_vsctl(["--", "set", "port", port_name, "tag=418"])
+
+                ports_removed = []
+                for port_id in cur_ports:
+                    if port_id not in new_ports:
+                        ports_removed.append(port_id)
+
+                if ports_added or ports_removed:
+                    self.plugin_rpc.update_ports(self.context,
+                                                 self.agent_id, self.dpid,
+                                                 ports_added, ports_removed)
+                else:
+                    LOG.debug(_("No port changed."))
+
+                self.cur_ports = new_ports
+                self.need_sync = False
             
-            # Notify plugin about port deltas
-            if added_ports:
-                LOG.debug(_("Agent loop has new ports!"))
-                # If process ports fails, we should resync with plugin
-                sync = self.process_ports(added_ports)
-                ports = ports | added_ports
-                    
+            except Exception:
+                LOG.exception(_("Error in agent event loop"))
+                self.need_sync = True
+
             # Sleep till end of polling interval
             elapsed = (time.time() - start)
             if (elapsed < self.polling_interval):
@@ -149,7 +146,6 @@ class OVXNeutronAgent():
                             "(%(polling_interval)s vs. %(elapsed)s)!"),
                           {'polling_interval': self.polling_interval,
                            'elapsed': elapsed})
-
 
 def main():
     cfg.CONF(project='neutron')
