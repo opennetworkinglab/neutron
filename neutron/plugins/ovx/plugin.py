@@ -92,25 +92,21 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
                 # Set port in active state in db
                 ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
-        
+
+        # Ports removed on the compute node will simply be marked as down.
+        # One must use delete_port explicitly to actually remove the port.
         for p in kwargs.get('ports_removed', []):
             port_id = p['id']
-            port_no = p['port_no']
             
-            with rpc_context.session.begin(subtransactions=True):
-                # Lookup port
-                port_db = self.plugin.get_port(rpc_context, port_id)
+            # Lookup port
+            port_db = self.plugin.get_port(rpc_context, port_id)
 
-                # Lookup OVX tenant ID
-                neutron_network_id = port_db['network_id']
-                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
-
-                # Lookup OVX vdpid and vport
-                neutron_port_id = port_db['id']
-                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(rpc_context.session, neutron_port_id)
-
-                # Remove port in OVX
-                (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+            # Set port status to DOWN if it exist, log warning otherwise
+            if port_db:
+                if port_db['status'] != q_const.PORT_STATUS_DOWN:
+                    ovxdb.set_port_status(rpc_context.session, port_id, q_const.PORT_STATUS_DOWN)
+            else:
+                LOG.warn("Port %s could not be found in database" % port_id)
 
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
@@ -212,7 +208,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         includes both software and hardware switches) that are connected to OVX.
         An image that is running an OpenFlow controller is spawned for the virtual network.
         """
-        LOG.debug("Neutron OVX: create network")
+        LOG.debug("Neutron OVX")
         with context.session.begin(subtransactions=True):
             # Save in db
             net_db = super(OVXNeutronPlugin, self).create_network(context, network)
@@ -250,7 +246,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                         :obj:`RESOURCE_ATTRIBUTE_MAP` object in
                         :file:`neutron/api/v2/attributes.py`.
         """
-        LOG.debug("Neutron OVX: update network")
+        LOG.debug("Neutron OVX")
         
         if id == self.ctrl_network['id']:
             raise Exception("Illegal request: cannot update control network")
@@ -281,7 +277,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param context: neutron api request context
         :param id: UUID representing the network to delete.
         """
-        LOG.debug("Neutron OVX: delete network")
+        LOG.debug("Neutron OVX:")
 
         if id == self.ctrl_network['id']:
             raise Exception("Illegal request: cannot delete control network")
@@ -311,7 +307,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      :file:`neutron/api/v2/attributes.py`.  All keys will be
                      populated.
         """
-        LOG.debug("Neutron OVX: create port")
+        LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
             # Set port status as 'DOWN' - will be updated by agent RPC
@@ -345,7 +341,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                      'allow_put' as listed in the :obj:`RESOURCE_ATTRIBUTE_MAP`
                      object in :file:`neutron/api/v2/attributes.py`.
         """
-        LOG.debug("Neutron OVX: update port")
+        LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
             # Requested admin state
@@ -376,7 +372,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         :param context: neutron api request context
         :param id: UUID representing the port to delete.
         """
-        LOG.debug("Neutron OVX: delete port")
+        LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
             # Remove port in OVX only if it's a data port
