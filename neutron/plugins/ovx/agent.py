@@ -124,7 +124,7 @@ class OVXNeutronAgent():
                         self.data_bridge.run_vsctl(["--", "set", "port", vif_port.port_name, "tag=418"])
                     else:
                         # Find old port number
-                        old_port = next(x['port_no'] for x in cur_ports if x['vif_id'] == port_id, None)
+                        old_port = next((x['port_no'] for x in cur_ports if x['vif_id'] == port_id), None)
                         if port_info['port_no'] != old_port:
                             ports_modified.append(port_info)
 
