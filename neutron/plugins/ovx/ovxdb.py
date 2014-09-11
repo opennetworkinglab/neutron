@@ -48,7 +48,7 @@ def get_ovx_port(session, neutron_port_id):
         return (result.get('ovx_vdpid'), result.get('ovx_vport'), result.get('ovx_host_id'))
 
 def del_ovx_port(session, neutron_port_id):
-    query = session.query(models_v2.PortMapping)
+    query = session.query(ovx_models.PortMapping)
     result = query.filter_by(neutron_port_id=neutron_port_id).one()
     if result:
         session.delete(result)
