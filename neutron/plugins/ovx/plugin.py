@@ -95,7 +95,8 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
         # Ports removed on the compute node will be marked as down in the database,
-        # and deleted from OVX. If the port cannot be found in the
+        # their Neutron/OVX mappings will be deleted from the db,
+        # and they will be deleted from OVX. If the port cannot be found in the db,
         # delete_port was called first and has already cleaned up everything for us.
         for port_id in kwargs.get('ports_removed', []):
 
@@ -106,10 +107,14 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 except q_exc.PortNotFound:
                     continue
 
-                # Set port status to DOWN and remove it from OVX if it exists, log warning otherwise
+                # Set port status to DOWN
                 if port_db['status'] != q_const.PORT_STATUS_DOWN:
                     ovxdb.set_port_status(rpc_context.session, port_id, q_const.PORT_STATUS_DOWN)
 
+                # Remove OXV mappings from db
+                ovxdb.del_ovx_port(rpc_context.session, port_id)
+
+                # Remove port from OVX if it exists, log warning otherwise
                 # Lookup OVX tenant ID, virtual dpid, virtual port number, and host ID
                 ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, port_db['network_id'])
                 (ovx_vdpid, ovx_vport, ovx_host_id) = ovxdb.get_ovx_port(rpc_context.session, port_id)

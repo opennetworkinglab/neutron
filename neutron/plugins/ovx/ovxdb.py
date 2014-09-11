@@ -47,6 +47,12 @@ def get_ovx_port(session, neutron_port_id):
     if result:
         return (result.get('ovx_vdpid'), result.get('ovx_vport'), result.get('ovx_host_id'))
 
+def del_ovx_port(session, neutron_port_id):
+    query = session.query(models_v2.Port)
+    result = query.filter_by(neutron_port_id=neutron_port_id).one()
+    if result:
+        session.delete(result)
+    
 def set_port_status(session, port_id, status):
     """Set the port status."""
     query = session.query(models_v2.Port)
