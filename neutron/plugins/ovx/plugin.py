@@ -113,7 +113,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 # as the physical port removal (by nova) triggers the virtual port removal.
                 # Any other exception (e.g., OVX is down) will lead to failure of this method.
                 try:
-                    self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                    self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
                 except ovxlib.OVXException:
                     LOG.warn("Could not remove port. Probably because physical port was already removed.")                        
                                 
