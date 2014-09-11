@@ -26,6 +26,7 @@ from oslo.config import cfg
 
 from neutron import context as ctx
 from neutron.common import constants as q_const
+from neutron.common import exceptions as q_exc
 from neutron.common import rpc as q_rpc
 from neutron.common import topics
 from neutron.db import agents_db
@@ -100,7 +101,10 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
             with rpc_context.session.begin(subtransactions=True):
                 # Lookup port
-                port_db = self.plugin.get_port(rpc_context, port_id)
+                try:
+                    port_db = self.plugin.get_port(rpc_context, port_id)
+                except q_exc.PortNotFound:
+                    continue
 
                 # Set port status to DOWN and remove it from OVX if it exists, log warning otherwise
                 if port_db['status'] != q_const.PORT_STATUS_DOWN:
