@@ -98,7 +98,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         # delete_port was called first and has already cleaned up everything for us.
         for port_id in kwargs.get('ports_removed', []):
 
-            with context.session.begin(subtransactions=True):
+            with rpc_context.session.begin(subtransactions=True):
                 # Lookup port
                 port_db = self.plugin.get_port(rpc_context, port_id)
 
