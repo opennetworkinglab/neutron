@@ -37,8 +37,8 @@ class OVXPluginApi(agent_rpc.PluginApi):
         """RPC to update information of ports on Neutron Server."""
         
         LOG.info(_("Update ports: added=%(added)s, "
-                   "removed=%(removed)s"),
-                 {'added': ports_added, 'removed': ports_removed})
+                   "removed=%(removed)s, modified=%(modified)s"),
+                 {'added': ports_added, 'removed': ports_removed, 'modified': ports_modified})
         self.cast(context, self.make_msg('update_ports',
                                          topic=topics.AGENT,
                                          agent_id=agent_id,
