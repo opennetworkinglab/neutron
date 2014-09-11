@@ -62,7 +62,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
         return q_rpc.PluginRpcDispatcher([self, agents_db.AgentExtRpcCallback()])
 
     def update_ports(self, rpc_context, **kwargs):
-        LOG.debug(_("Agent has port updates, kwargs=" % kwargs))
+        LOG.debug(_("Agent has port updates, kwargs=%s" % kwargs))
 
         dpid = kwargs.get('dpid')
         
@@ -111,9 +111,6 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 if port_db['status'] != q_const.PORT_STATUS_DOWN:
                     ovxdb.set_port_status(rpc_context.session, port_id, q_const.PORT_STATUS_DOWN)
 
-                # Remove OXV mappings from db
-                ovxdb.del_ovx_port(rpc_context.session, port_id)
-
                 # Remove port from OVX if it exists, log warning otherwise
                 # Lookup OVX tenant ID, virtual dpid, virtual port number, and host ID
                 ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, port_db['network_id'])
@@ -124,7 +121,11 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 try:
                     self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
                 except ovxlib.OVXException:
-                    LOG.warn("Could not remove port. Probably because physical port was already removed.")                        
+                    LOG.warn("Could not remove port. Probably because physical port was already removed.")
+
+                # Remove OXV mappings from db
+                ovxdb.del_ovx_port(rpc_context.session, port_id)
+
                                 
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
