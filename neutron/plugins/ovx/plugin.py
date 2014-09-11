@@ -77,75 +77,46 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 neutron_network_id = port_db['network_id']
                 ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
 
-                # Create port in OVX
-                (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_no))
-
                 # Stop port if requested (port is started by default in OVX)
                 if not port_db['admin_state_up']:
                     self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
+                # Create port in OVX
+                (ovx_vdpid, ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_no))
+
                 # Register host in OVX
                 ovx_host_id = self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
-
+                    
                 # Save mapping between Neutron port ID and OVX dpid, port number, and host ID
-                ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport, ovx_host_id)
+                ovxdb.add_ovx_port(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport, ovx_host_id)
 
                 # Set port in active state in db
                 ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
-        # Ports removed on the compute node will simply be marked as down.
-        # Use delete_port explicitly to actually remove the port.
+        # Ports removed on the compute node will be marked as down in the database,
+        # and deleted from OVX. If the port cannot be found in the
+        # delete_port was called first and has already cleaned up everything for us.
         for port_id in kwargs.get('ports_removed', []):
-            # Lookup port
-            port_db = self.plugin.get_port(rpc_context, port_id)
 
-            # Set port status to DOWN if it exist, log warning otherwise
-            if port_db:
-                if port_db['status'] != q_const.PORT_STATUS_DOWN:
-                    ovxdb.set_port_status(rpc_context.session, port_id, q_const.PORT_STATUS_DOWN)
-            else:
-                LOG.warn("Port %s could not be found in database" % port_id)
-
-        # Ports that have a modified port number (happens after rebooting an instance) will
-        # be deleted and recreated in OVX. This implies the virtual port number in OVX also
-        # changes. This is ok for the default controller, but may lead to problems for
-        # custom controllers.
-        for p in kwargs.get('ports_modified', []):
-            port_id = p['id']
-            port_no = p['port_no']
-            
-            with rpc_context.session.begin(subtransactions=True):
+            with context.session.begin(subtransactions=True):
                 # Lookup port
                 port_db = self.plugin.get_port(rpc_context, port_id)
 
-                # Lookup OVX tenant ID
-                neutron_network_id = port_db['network_id']
-                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
-                (old_ovx_vdpid, old_ovx_vport, old_ovx_host_id) = ovxdb.get_ovx_vport(rpc_context.session, port_db['id'])
+                # Set port status to DOWN and remove it from OVX if it exists, log warning otherwise
+                if port_db['status'] != q_const.PORT_STATUS_DOWN:
+                    ovxdb.set_port_status(rpc_context.session, port_id, q_const.PORT_STATUS_DOWN)
 
-                # Disconnect host in OVX
-                # This is not strictly necessary, as removing the virtual port will also remove the attached host in OVX.
-                self.plugin.ovx_client.disconnectHost(ovx_tenant_id, old_ovx_host_id)
-                
-                # Delete port in OVX
-                self.plugin.ovx_client.removePort(ovx_tenant_id, old_ovx_vdpid, old_ovx_vport)
-            
-                # Create port in OVX
-                (new_ovx_vdpid, new_ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_no))
-
-                # Connect host in OVX
-                new_ovx_host_id = self.plugin.ovx_client.connectHost(ovx_tenant_id, new_ovx_vdpid, new_ovx_vport, port_db['mac_address'])
-
-                # Stop port if requested (port is started by default in OVX)
-                if not port_db['admin_state_up']:
-                    self.plugin.ovx_client.stopPort(ovx_tenant_id, new_ovx_vdpid, new_ovx_vport)
-
-                # Save mapping between Neutron port ID and OVX dpid, port number, and host ID
-                ovxdb.update_ovx_vport(rpc_context.session, port_db['id'], new_ovx_vdpid, new_ovx_vport, new_ovx_host_id)
-
-                # Set port in active state in db
-                ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
-                
+                # Lookup OVX tenant ID, virtual dpid, virtual port number, and host ID
+                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, port_db['network_id'])
+                (ovx_vdpid, ovx_vport, ovx_host_id) = ovxdb.get_ovx_port(rpc_context.session, port_id)
+                # If OVX throws an exception, assume the virtual port was already gone in OVX
+                # as the physical port removal (by nova) triggers the virtual port removal.
+                # Any other exception (e.g., OVX is down) will lead to failure of this method.
+                try:
+                    self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                except ovxlib.OVXException:
+                    LOG.warn("Could not remove port. Probably because physical port was already removed.")                        
+                                
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
     inside the control network."""
@@ -391,7 +362,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Start or stop port as requested
             if (req_state != None) and (req_state != db_state):
                 ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, port_db['network_id'])
-                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
+                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_port(context.session, id)
                 if req_state:
                     self.ovx_client.startPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
                 else:
@@ -413,22 +384,23 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
-            # Remove port in OVX only if it's a data port
-            neutron_network_id = super(OVXNeutronPlugin, self).get_port(context, id)['network_id']
+            port_db = super(OVXNeutronPlugin, self).get_port(context, id)
+            neutron_network_id = port_db['network_id']
             
+            # Remove port in OVX only if it's a data port
             if neutron_network_id != self.ctrl_network['id']:
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
                 ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
-                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_vport(context.session, id)
+                (ovx_vdpid, ovx_vport, ovx_host_id) = ovxdb.get_ovx_port(context.session, id)
                 # If OVX throws an exception, assume the virtual port was already gone in OVX
                 # as the physical port removal (by nova) triggers the virtual port removal.
                 # Any other exception (e.g., OVX is down) will lead to failure of this method.
-                # A better way of handling this is by having the agent signal the removal of the port.
-                # Not sure if this solution works when nova deletes a vm though.
+                # No need to disconnect the host in OVX: when we remove the port,
+                # the host goes away as well
                 try:
                     self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
                 except ovxlib.OVXException:
-                    LOG.warn("Could not remove port. Probably because physical port was already removed.")
+                    LOG.warn("Could not remove OVX port, most likely because physical port was already removed.")
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
