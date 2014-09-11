@@ -34,17 +34,26 @@ def get_ovx_controller(session, neutron_network_id):
     if result:
         return result.get('ovx_controller')
 
-def add_ovx_vport(session, neutron_port_id, ovx_vdpid, ovx_vport):
+def add_ovx_vport(session, neutron_port_id, ovx_vdpid, ovx_vport, ovx_host_id):
     ovx_vport_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
-                                                     ovx_vdpid=ovx_vdpid,
-                                                     ovx_vport=ovx_vport)
+                                               ovx_vdpid=ovx_vdpid,
+                                               ovx_vport=ovx_vport,
+                                               ovx_host_id=ovx_host_id)
     session.add(ovx_vport_mapping)
+
+def update_ovx_vport(session, neutron_port_id, ovx_vdpid, ovx_vport, ovx_host_id):
+    ovx_vport_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
+                                               ovx_vdpid=ovx_vdpid,
+                                               ovx_vport=ovx_vport,
+                                               ovx_host_id=ovx_host_id)
+    session.merge(ovx_vport_mapping)
+    session.flush()
 
 def get_ovx_vport(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
     result = query.filter_by(neutron_port_id=neutron_port_id).first()
     if result:
-        return (result.get('ovx_vdpid'), result.get('ovx_vport'))
+        return (result.get('ovx_vdpid'), result.get('ovx_vport'), result.get('ovx_host_id'))
 
 def set_port_status(session, port_id, status):
     """Set the port status."""

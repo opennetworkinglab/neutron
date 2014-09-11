@@ -28,10 +28,11 @@ class NetworkMapping(model_base.BASEV2):
     ovx_controller = sa.Column(sa.String(36), nullable=False)
 
 class PortMapping(model_base.BASEV2):
-    """Neutron port ID <-> OVX virtual port number mapping."""
+    """Neutron port ID <-> OVX virtual dpid, virtual port number, and host id mapping."""
     __tablename__ = "ovx_ports"
     neutron_port_id = sa.Column(sa.String(36),
                                 sa.ForeignKey('ports.id', ondelete="CASCADE"),
                                 primary_key=True)
     ovx_vdpid = sa.Column(sa.BigInteger, nullable=False)
     ovx_vport = sa.Column(sa.Integer, nullable=False)
+    ovx_host_id = sa.Column(sa.Integer, nullable=False)

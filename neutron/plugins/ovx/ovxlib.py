@@ -111,18 +111,22 @@ class OVXClient():
     def setLinkPath(self, tenantId, linkId, path, priority):
         req = {'tenantId': tenantId, 'linkId': linkId, 'path': path, 'priority': priority}
         ret = self._connect("setLinkPath", self.tenant_url, data=req)
-        
+
     def connectHost(self, tenantId, vdpid, vport, mac):
         req = {'tenantId': tenantId, 'vdpid': vdpid, 'vport': vport, 'mac': mac}
         ret = self._connect("connectHost", self.tenant_url, data=req)
         hostId = ret.get('hostId')
         return ret.get('hostId')
-            
+
+    def disconnectHost(self, tenantId, hostId):
+        req = {'tenantId': tenantId, 'hostId': hostId}
+        ret = self._connect("disconnectHost", self.tenant_url, data=req)
+
     def connectRoute(self, tenantId, switchId, srcPort, dstPort, path):
         req = {'tenantId': tenantId, 'vdpid': switchId, 'srcPort': srcPort, 'dstPort': dstPort, 'path': path}
         ret = self._connect("connectRoute", self.tenant_url, data=req)
         return reg.get('routeId')
-        
+
     def createSwitchRoute(self, tenantId, switchId, srcPort, dstPort, path):
         req = {'tenantId': tenantId, 'dpid': switchId, 'srcPort': srcPort, 'dstPort': dstPort, 'path': path}
         ret = self._connect("createSwitchRoute", self.tenant_url, data=req)

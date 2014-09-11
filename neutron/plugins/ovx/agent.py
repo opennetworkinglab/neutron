@@ -33,7 +33,7 @@ from neutron.plugins.ovx.common import config
 LOG = log.getLogger(__name__)
 
 class OVXPluginApi(agent_rpc.PluginApi):
-    def update_ports(self, context, agent_id, dpid, ports_added, ports_removed):
+    def update_ports(self, context, agent_id, dpid, ports_added, ports_removed, ports_modified):
         """RPC to update information of ports on Neutron Server."""
         
         LOG.info(_("Update ports: added=%(added)s, "
@@ -44,7 +44,8 @@ class OVXPluginApi(agent_rpc.PluginApi):
                                          agent_id=agent_id,
                                          dpid=dpid,
                                          ports_added=ports_added,
-                                         ports_removed=ports_removed))
+                                         ports_removed=ports_removed,
+                                         ports_modified=ports_modified))
 
 class OVXNeutronAgent():
     def __init__(self, data_bridge, ctrl_bridge, root_helper, polling_interval):
@@ -99,37 +100,48 @@ class OVXNeutronAgent():
             LOG.error(_("Failed reporting state!"))
 
     def _vif_port_to_port_info(self, vif_port):
-        return dict(id=vif_port.vif_id, port_no=vif_port.ofport,
-                    port_name=vif_port.port_name)
+        return dict(id=vif_port.vif_id, port_no=vif_port.ofport)
     
     def daemon_loop(self):
         while True:
             start = time.time()
             try:
+                # List of port dicts
                 cur_ports = [] if self.need_sync else self.cur_ports
+                cur_ports_id = [x['id'] for x in cur_ports]
                 new_ports = []
 
                 ports_added = []
+                ports_modified = []
                 for vif_port in self.data_bridge.get_vif_ports():
-                    port_id = vif_port.vif_id
-                    new_ports.append(port_id)
-                    if port_id not in cur_ports:
-                        port_info = self._vif_port_to_port_info(vif_port)
+                    port_info = self._vif_port_to_port_info(vif_port)
+                    new_ports.append(port_info)
+                    port_id = port_info['id']
+
+                    if port_id not in cur_ports_id:
                         ports_added.append(port_info)
                         # Hack for Stanford OpenCloud deployment
                         self.data_bridge.run_vsctl(["--", "set", "port", vif_port.port_name, "tag=418"])
+                    else:
+                        # Find old port number
+                        old_port = next(x['port_no'] for x in cur_ports if x['vif_id'] == port_id, None)
+                        if port_info['port_no'] != old_port:
+                            ports_modified.append(port_info)
 
+                # List of port IDs
                 ports_removed = []
-                for port_id in cur_ports:
-                    if port_id not in new_ports:
+                new_ports_id = [x['id'] for x in new_ports]
+                for port_id in cur_ports_id:
+                    if port_id not in new_ports_id:
                         ports_removed.append(port_id)
 
-                if ports_added or ports_removed:
+                if ports_added or ports_removed or ports_modified:
                     self.plugin_rpc.update_ports(self.context,
                                                  self.agent_id, self.dpid,
-                                                 ports_added, ports_removed)
+                                                 ports_added, ports_removed,
+                                                 ports_modified)
                 else:
-                    LOG.debug(_("No port changed."))
+                    LOG.debug(_("No port changes."))
 
                 self.cur_ports = new_ports
                 self.need_sync = False

@@ -84,20 +84,18 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 if not port_db['admin_state_up']:
                     self.plugin.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
-                # Save mapping between Neutron port ID and OVX dpid and port number
-                ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport)
-
                 # Register host in OVX
-                self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
+                ovx_host_id = self.plugin.ovx_client.connectHost(ovx_tenant_id, ovx_vdpid, ovx_vport, port_db['mac_address'])
+
+                # Save mapping between Neutron port ID and OVX dpid, port number, and host ID
+                ovxdb.add_ovx_vport(rpc_context.session, port_db['id'], ovx_vdpid, ovx_vport, ovx_host_id)
 
                 # Set port in active state in db
                 ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
         # Ports removed on the compute node will simply be marked as down.
-        # One must use delete_port explicitly to actually remove the port.
-        for p in kwargs.get('ports_removed', []):
-            port_id = p['id']
-            
+        # Use delete_port explicitly to actually remove the port.
+        for port_id in kwargs.get('ports_removed', []):
             # Lookup port
             port_db = self.plugin.get_port(rpc_context, port_id)
 
@@ -108,6 +106,46 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
             else:
                 LOG.warn("Port %s could not be found in database" % port_id)
 
+        # Ports that have a modified port number (happens after rebooting an instance) will
+        # be deleted and recreated in OVX. This implies the virtual port number in OVX also
+        # changes. This is ok for the default controller, but may lead to problems for
+        # custom controllers.
+        for p in kwargs.get('ports_modified', []):
+            port_id = p['id']
+            port_no = p['port_no']
+            
+            with rpc_context.session.begin(subtransactions=True):
+                # Lookup port
+                port_db = self.plugin.get_port(rpc_context, port_id)
+
+                # Lookup OVX tenant ID
+                neutron_network_id = port_db['network_id']
+                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
+                (old_ovx_vdpid, old_ovx_vport, old_ovx_host_id) = ovxdb.get_ovx_vport(rpc_context.session, port_db['id'])
+
+                # Disconnect host in OVX
+                # This is not strictly necessary, as removing the virtual port will also remove the attached host in OVX.
+                self.plugin.ovx_client.disconnectHost(ovx_tenant_id, old_ovx_host_id)
+                
+                # Delete port in OVX
+                self.plugin.ovx_client.removePort(ovx_tenant_id, old_ovx_vdpid, old_ovx_vport)
+            
+                # Create port in OVX
+                (new_ovx_vdpid, new_ovx_vport) = self.plugin.ovx_client.createPort(ovx_tenant_id, ovxlib.hexToLong(dpid), int(port_no))
+
+                # Connect host in OVX
+                new_ovx_host_id = self.plugin.ovx_client.connectHost(ovx_tenant_id, new_ovx_vdpid, new_ovx_vport, port_db['mac_address'])
+
+                # Stop port if requested (port is started by default in OVX)
+                if not port_db['admin_state_up']:
+                    self.plugin.ovx_client.stopPort(ovx_tenant_id, new_ovx_vdpid, new_ovx_vport)
+
+                # Save mapping between Neutron port ID and OVX dpid, port number, and host ID
+                ovxdb.update_ovx_vport(rpc_context.session, port_db['id'], new_ovx_vdpid, new_ovx_vport, new_ovx_host_id)
+
+                # Set port in active state in db
+                ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
+                
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
     inside the control network."""
