@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.api.v2 import attributes
+
 CTRL_NETWORK = {
     'network': {
         'name': 'OVX_ctrl_network',
@@ -51,6 +53,7 @@ NAT_SUBNET = {
         'cidr': '172.16.0.0/16',
         'gateway_ip': '172.16.0.1',
         'dns_nameservers': [],
+        'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
         'host_routes': [],
         'enable_dhcp': False
     }
