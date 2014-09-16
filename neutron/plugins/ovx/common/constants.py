@@ -34,3 +34,24 @@ CTRL_SUBNET = {
         'enable_dhcp': True
     }
 }
+
+NAT_NETWORK = {
+    'network': {
+        'name': 'OpenCloud_nat_network',
+        'admin_state_up': True,
+        'shared': False
+    }
+}
+
+# TODO: add tenant_id? (lookup by project_id)
+NAT_SUBNET = {
+    'subnet': {
+        'name': 'OpenCloud_nat_subnet',
+        'ip_version': 4,
+        'cidr': '172.16.0.0/16',
+        'gateway_ip': '172.16.0.1',
+        'dns_nameservers': [],
+        'host_routes': [],
+        'enable_dhcp': False
+    }
+}
