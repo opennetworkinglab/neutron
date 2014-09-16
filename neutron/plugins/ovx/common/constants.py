@@ -39,7 +39,7 @@ CTRL_SUBNET = {
 
 NAT_NETWORK = {
     'network': {
-        'name': 'nat_net',
+        'name': 'nat-net',
         'admin_state_up': True,
         'shared': False
     }
@@ -48,7 +48,7 @@ NAT_NETWORK = {
 # TODO: add tenant_id? (lookup by project_id)
 NAT_SUBNET = {
     'subnet': {
-        'name': 'nat_subnet',
+        'name': 'nat-subnet',
         'ip_version': 4,
         'cidr': '172.16.0.0/16',
         'gateway_ip': '172.16.0.1',
