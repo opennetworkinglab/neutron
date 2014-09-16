@@ -484,7 +484,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         
         # Check if NAT network already exists
         nat_net_name = ovx_constants.NAT_NETWORK['network']['name']
-        filters = {'name': [ctrl_net_name]}
+        filters = {'name': [nat_net_name]}
         nat_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
         if len(nat_nets) != 0:
             LOG.info("Retrieved NAT network from db")
