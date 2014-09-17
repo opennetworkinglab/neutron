@@ -475,26 +475,3 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             subnet = super(OVXNeutronPlugin, self).create_subnet(context, ovx_constants.CTRL_SUBNET)
 
         return net
-
-    def _setup_nat_network(self):
-        """Creates NAT network in Neutron database, returns the network."""
-        
-        LOG.debug("Setting up NAT network")
-        context = ctx.get_admin_context()
-        
-        # Check if NAT network already exists
-        nat_net_name = ovx_constants.NAT_NETWORK['network']['name']
-        filters = {'name': [nat_net_name]}
-        nat_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
-        if len(nat_nets) != 0:
-            LOG.info("Retrieved NAT network from db")
-            return nat_nets[0]
-
-        with context.session.begin(subtransactions=True):
-            # Register control network and control subnet in db
-            net = super(OVXNeutronPlugin, self).create_network(context, ovx_constants.NAT_NETWORK)
-            subnet = ovx_constants.NAT_SUBNET
-            subnet['subnet']['network_id'] = net['id']
-            subnet = super(OVXNeutronPlugin, self).create_subnet(context, ovx_constants.NAT_SUBNET)
-
-        return net
