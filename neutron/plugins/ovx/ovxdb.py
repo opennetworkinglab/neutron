@@ -24,13 +24,13 @@ def add_ovx_network(session, neutron_network_id, ovx_tenant_id, ovx_controller):
 
 def get_ovx_tenant_id(session, neutron_network_id):
     query = session.query(ovx_models.NetworkMapping)
-    result = query.filter_by(neutron_network_id=neutron_network_id).first()
+    result = query.filter_by(neutron_network_id=neutron_network_id).one()
     if result:
         return result.get('ovx_tenant_id')
 
 def get_ovx_controller(session, neutron_network_id):
     query = session.query(ovx_models.NetworkMapping)
-    result = query.filter_by(neutron_network_id=neutron_network_id).first()
+    result = query.filter_by(neutron_network_id=neutron_network_id).one()
     if result:
         return result.get('ovx_controller')
 
@@ -43,7 +43,7 @@ def add_ovx_port(session, neutron_port_id, ovx_vdpid, ovx_vport, ovx_host_id):
 
 def get_ovx_port(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
-    result = query.filter_by(neutron_port_id=neutron_port_id).first()
+    result = query.filter_by(neutron_port_id=neutron_port_id).one()
     if result:
         return (result.get('ovx_vdpid'), result.get('ovx_vport'), result.get('ovx_host_id'))
 
