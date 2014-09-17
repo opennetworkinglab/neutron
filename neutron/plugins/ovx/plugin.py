@@ -206,8 +206,6 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.setup_rpc()
         # Setup empty control network
         self.ctrl_network = self._setup_ctrl_network()
-        # Setup empty NAT network
-        self._setup_nat_network()
         # Controller manager
         self.ctrl_manager = ControllerManager(self.ctrl_network)
 
