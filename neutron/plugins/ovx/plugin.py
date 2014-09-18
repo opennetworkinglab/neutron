@@ -344,7 +344,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 LOG.debug("Setting port binding to data for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.data_bridge
                 # Ports in data network are DOWN by default - will be updated by agent
-                ovxdb.set_port_status(context.session, port['id'], q_const.PORT_STATUS_DOWN)
+                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_DOWN)
 
             self._process_portbindings_create_and_update(context, port['port'], neutron_port)
 
