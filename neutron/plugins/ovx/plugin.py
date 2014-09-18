@@ -201,7 +201,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS
         }
-        #portbindings_db.register_port_dict_function()
+        portbindings_base.register_port_dict_function()
         # Init RPC
         self.setup_rpc()
         # Setup empty control network

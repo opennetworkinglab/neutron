@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.api.v2 import attributes
-
 CTRL_NETWORK = {
     'network': {
         'name': 'OVX_ctrl_network',
