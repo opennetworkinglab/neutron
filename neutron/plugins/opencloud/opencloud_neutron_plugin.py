@@ -22,7 +22,7 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
     supported_extension_aliases = OVXNeutronPlugin.supported_extension_aliases + ["nat"]
 
     def __init__(self):
-        super(OVXNeutronPlugin, self).__init__()
+        super(OpenCloudPluginV2, self).__init__()
         # Setup NAT network
         self.nat_network = self._setup_db_network(opencloud_constants.NAT_NETWORK, opencloud_constants.NAT_SUBNET)
     
