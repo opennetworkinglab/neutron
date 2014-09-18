@@ -5,6 +5,7 @@ from neutron.common import exceptions as q_exc
 from neutron.openstack.common import log as logging
 from neutron.plugins.opencloud.common import config
 from neutron.plugins.opencloud.common import constants as opencloud_constants
+from neutron.plugins.ovx import ovxdb
 from neutron.plugins.ovx.plugin import *
 from neutron.extensions import nat
 from neutron.extensions import portbindings
@@ -91,10 +92,12 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
     def create_port(self, context, port):
         """Set port binding to NAT bridge."""
         LOG.error('NAT id %s' % self.nat_network['id'])
-        # if port['port']['network_id'] == self.nat_network['id']:
-        #     LOG.debug("Setting port binding to nat for port %s" % port['port'])
-        #     self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.nat_bridge
-            
+        if port['port']['network_id'] == self.nat_network['id']:
+            LOG.debug("Setting port binding to nat for port %s" % port['port'])
+            self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.nat_bridge
+            # Ports in control network are active by default, they are not monitored by the agent
+            ovxdb.set_port_status(context.session, port['id'], q_const.PORT_STATUS_ACTIVE)
+
         return super(OpenCloudPluginV2, self).create_port(context, port)
         
         

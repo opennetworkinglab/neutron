@@ -340,8 +340,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             if port['port']['network_id'] == self.ctrl_network['id']:
                 LOG.debug("Setting port binding to ctrl for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.ctrl_bridge
-                # Ports in control network are active - these aren't monitored by the agent
-                ovxdb.set_port_status(context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
+                # Ports in control network are active by default, they are not monitored by the agent
+                ovxdb.set_port_status(context.session, port['id'], q_const.PORT_STATUS_ACTIVE)
             else:
                 LOG.debug("Setting port binding to data for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.data_bridge
