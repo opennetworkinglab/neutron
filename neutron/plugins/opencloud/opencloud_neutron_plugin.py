@@ -91,10 +91,9 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
 
     def create_port(self, context, port):
         """Set port binding to NAT bridge."""
-        LOG.error('NAT id %s' % self.nat_network['id'])
         if port['port']['network_id'] == self.nat_network['id']:
             LOG.debug("Setting port binding to nat for port %s" % port['port'])
-            self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.nat_bridge
+            self.base_binding_dict[portbindings.PROFILE] = {'bridge': cfg.CONF.OVS.nat_bridge}
 
         return super(OpenCloudPluginV2, self).create_port(context, port)
         
