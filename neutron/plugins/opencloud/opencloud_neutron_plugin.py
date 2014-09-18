@@ -95,8 +95,6 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
         if port['port']['network_id'] == self.nat_network['id']:
             LOG.debug("Setting port binding to nat for port %s" % port['port'])
             self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.nat_bridge
-            # Ports in control network are active by default, they are not monitored by the agent
-            ovxdb.set_port_status(context.session, port['id'], q_const.PORT_STATUS_ACTIVE)
 
         return super(OpenCloudPluginV2, self).create_port(context, port)
         
