@@ -458,7 +458,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         """Creates network in Neutron database, returns the network."""
         
         net_name = network['network']['name']
-        LOG.debug("Setting up db network %s" net_name)
+        LOG.debug("Setting up db network %s" % net_name)
         context = ctx.get_admin_context()
         
         # Check if network already exists in db
