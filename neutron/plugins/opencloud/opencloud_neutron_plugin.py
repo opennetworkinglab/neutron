@@ -5,7 +5,7 @@ from neutron.extensions import nat
 import opencloud_db_v2
 
 class OpenCloudPluginV2(OVXNeutronPlugin):
-    _supported_extension_aliases = OVXNeutronPlugin._supported_extension_aliases + ["nat"]
+    supported_extension_aliases = OVXNeutronPlugin.supported_extension_aliases + ["nat"]
 
     def _extend_port_dict_nat(self, context, port):
         forward = opencloud_db_v2.get_port_forwarding(context.session, port['id'])
