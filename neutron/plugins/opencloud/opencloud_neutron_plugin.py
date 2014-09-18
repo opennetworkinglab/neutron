@@ -3,6 +3,7 @@ from oslo.config import cfg
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as q_exc
 from neutron.openstack.common import log as logging
+from neutron.plugins.opencloud.common import config
 from neutron.plugins.opencloud.common import constants as opencloud_constants
 from neutron.plugins.ovx.plugin import *
 from neutron.extensions import nat
