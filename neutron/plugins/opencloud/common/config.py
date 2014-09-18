@@ -2,7 +2,7 @@ from oslo.config import cfg
 from neutron.agent.common import config
 
 ovs_opts = [
-    cfg.StrOpt('ovs_bridge', default='br-nat', help=_("NAT network bridge"))
+    cfg.StrOpt('nat_bridge', default='br-nat', help=_("NAT network bridge"))
 ]
 
 cfg.CONF.register_opts(ovs_opts, "OVS")
