@@ -206,7 +206,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Init RPC
         self.setup_rpc()
         # Setup empty control network
-        self.ctrl_network = self._setup_ctrl_network()
+        self.ctrl_network = self._setup_db_network(ovx_constants.CTRL_NETWORK, ovx_constants.CTRL_SUBNET)
         # Controller manager
         self.ctrl_manager = ControllerManager(self.ctrl_network)
 
@@ -340,6 +340,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             if port['port']['network_id'] == self.ctrl_network['id']:
                 LOG.debug("Setting port binding to ctrl for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.ctrl_bridge
+                # Ports in control network are active - these aren't monitored by the agent
+                ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
             else:
                 LOG.debug("Setting port binding to data for port %s" % port['port'])
                 self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.data_bridge
@@ -452,25 +454,24 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return tenant_id
 
-    def _setup_ctrl_network(self):
-        """Creates control network in Neutron database, returns the network."""
+    def _setup_db_network(self, network, subnet):
+        """Creates network in Neutron database, returns the network."""
         
-        LOG.debug("Setting up control network")
+        net_name = network['network']['name']
+        LOG.debug("Setting up db network %s" net_name)
         context = ctx.get_admin_context()
         
-        # Check if control network already exists
-        ctrl_net_name = ovx_constants.CTRL_NETWORK['network']['name']
-        filters = {'name': [ctrl_net_name]}
-        ctrl_nets = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
-        if len(ctrl_nets) != 0:
-            LOG.info("Retrieved control network from db")
-            return ctrl_nets[0]
+        # Check if network already exists in db
+        filters = {'name': [net_name]}
+        networks = super(OVXNeutronPlugin, self).get_networks(context, filters=filters)
+        if len(networks) != 0:
+            return networks[0]
 
+        # Register network and subnet in db
         with context.session.begin(subtransactions=True):
-            # Register control network and control subnet in db
-            net = super(OVXNeutronPlugin, self).create_network(context, ovx_constants.CTRL_NETWORK)
-            subnet = ovx_constants.CTRL_SUBNET
+            net = super(OVXNeutronPlugin, self).create_network(context, network)
             subnet['subnet']['network_id'] = net['id']
-            subnet = super(OVXNeutronPlugin, self).create_subnet(context, ovx_constants.CTRL_SUBNET)
+            super(OVXNeutronPlugin, self).create_subnet(context, subnet)
 
+        # Return network does not reference subnet
         return net

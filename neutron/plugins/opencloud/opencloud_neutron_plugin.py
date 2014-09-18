@@ -1,12 +1,30 @@
+from oslo.config import cfg
+
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as q_exc
+from neutron.openstack.common import log as logging
+from neutron.plugins.opencloud.common import constants as opencloud_constants
 from neutron.plugins.ovx.plugin import *
 from neutron.extensions import nat
+from neutron.extensions import portbindings
+
 import opencloud_db_v2
 
+LOG = logging.getLogger(__name__)
+
+
 class OpenCloudPluginV2(OVXNeutronPlugin):
+    """Neutron plugin for OpenCloud deployments based on OVX.
+    Original code by Scott Baker:
+    http://git.planet-lab.org/?p=opencloud-plugin.git;a=summary"""
+    
     supported_extension_aliases = OVXNeutronPlugin.supported_extension_aliases + ["nat"]
 
+    def __init__(self):
+        super(OVXNeutronPlugin, self).__init__()
+        # Setup NAT network
+        self.nat_network = self._setup_db_network(opencloud_constants.NAT_NETWORK, opencloud_constants.NAT_SUBNET)
+    
     def _extend_port_dict_nat(self, context, port):
         forward = opencloud_db_v2.get_port_forwarding(context.session, port['id'])
         if forward:
@@ -69,6 +87,15 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
 
         return [self._fields(port, fields) for port in ports]
 
+    def create_port(self, context, port):
+        """Set port binding to NAT bridge."""
+        if port['port']['network_id'] == self.nat_network['id']:
+            LOG.debug("Setting port binding to nat for port %s" % port['port'])
+            self.base_binding_dict[portbindings.BRIDGE] = cfg.CONF.OVS.nat_bridge
+            
+        return super(OpenCloudPluginV2, self).create_port(context, port)
+        
+        
     def update_port(self, context, id, port):
         forward_ports = self._process_nat_update(context, port['port'], id)
         session = context.session
