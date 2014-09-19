@@ -27,7 +27,7 @@ def get_ovx_network(session, neutron_network_id):
     return query.filter_by(neutron_network_id=neutron_network_id).one()
 
 def add_port_profile_binding(session, port_id, bridge):
-    port_profile_binding = ovx_modles.PortProfileBinding(port_id=port_id,
+    port_profile_binding = ovx_models.PortProfileBinding(port_id=port_id,
                                                          bridge=bridge)
     session.add(port_profile_binding)
 
