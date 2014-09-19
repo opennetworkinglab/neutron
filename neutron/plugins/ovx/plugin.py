@@ -382,7 +382,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             db_state = port_db['admin_state_up']
         
             # Start or stop port in OVX (data ports only!) as requested
-            if self._is_data_port(context, port_db)
+            if self._is_data_port(context, port_db):
                 if (req_state != None) and (req_state != db_state):
                     ovx_tenant_id = ovxdb.get_ovx_network(context.session, port_db['network_id']).ovx_tenant_id
                     ovx_port = ovxdb.get_ovx_port(context.session, id)
