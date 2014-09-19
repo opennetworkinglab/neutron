@@ -413,7 +413,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Remove port in OVX only if it's a data port
             if neutron_network_id != self.ctrl_network['id']:
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
-                ovx_tenant_id = ovxdb.get_ovx_network(context.session, neutron_network_id).tenant_id
+                ovx_tenant_id = ovxdb.get_ovx_network(context.session, neutron_network_id).ovx_tenant_id
                 ovx_port = ovxdb.get_ovx_port(context.session, id)
                 (ovx_vdpid, ovx_vport) = ovx_port.ovx_vdpid, ovx_vport.ovx_vport
                 # If OVX throws an exception, assume the virtual port was already gone in OVX
