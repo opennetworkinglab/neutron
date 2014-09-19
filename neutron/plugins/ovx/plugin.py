@@ -381,15 +381,16 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             port_db = super(OVXNeutronPlugin, self).get_port(context, id)
             db_state = port_db['admin_state_up']
         
-            # Start or stop port as requested
-            if (req_state != None) and (req_state != db_state):
-                ovx_tenant_id = ovxdb.get_ovx_network(context.session, port_db['network_id']).ovx_tenant_id
-                ovx_port = ovxdb.get_ovx_port(context.session, id)
-                (ovx_vdpid, ovx_vport) = ovx_port.vdpid, ovx_port.vport
-                if req_state:
-                    self.ovx_client.startPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
-                else:
-                    self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+            # Start or stop port in OVX (data ports only!) as requested
+            if port['network_id'] == self.ctrl_network['id']:
+                if (req_state != None) and (req_state != db_state):
+                    ovx_tenant_id = ovxdb.get_ovx_network(context.session, port_db['network_id']).ovx_tenant_id
+                    ovx_port = ovxdb.get_ovx_port(context.session, id)
+                    (ovx_vdpid, ovx_vport) = ovx_port.vdpid, ovx_port.vport
+                     if req_state:
+                         self.ovx_client.startPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
+                     else:
+                         self.ovx_client.stopPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
 
             # Save port to db
             neutron_port = super(OVXNeutronPlugin, self).update_port(context, id, port)
