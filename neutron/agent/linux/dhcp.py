@@ -775,7 +775,7 @@ class DeviceManager(object):
             LOG.debug(_('Reusing existing device: %s.'), interface_name)
         else:
             # Hack to inject bridge name
-            profile = getattr(port, 'binding:profile'), {})
+            profile = getattr(port, 'binding:profile', {})
             bridge = getattr(profile, 'bridge', None)
             self.driver.plug(network.id,
                              port.id,
