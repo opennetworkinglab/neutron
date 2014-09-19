@@ -109,4 +109,4 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
                 opencloud_db_v2.add_port_forwarding(session, updated_port['id'], forward_ports)
                 self._extend_port_dict_nat(context, updated_port)
 
-        return self._extend_port_dict_binding(updated_port)
+        return self._extend_port_dict_binding(context, updated_port)
