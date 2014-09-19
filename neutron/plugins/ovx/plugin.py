@@ -318,7 +318,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self.ctrl_manager.delete(ovx_controller)
 
             # Remove network from OVX
-            ovx_tenant_id = ovxdb.get_ovx_network(context.session, id).tenant_id
+            ovx_tenant_id = ovxdb.get_ovx_network(context.session, id).ovx_tenant_id
             self.ovx_client.removeNetwork(ovx_tenant_id)
 
             # Remove network from db
