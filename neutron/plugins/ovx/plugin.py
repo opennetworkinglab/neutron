@@ -415,7 +415,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
                 ovx_tenant_id = ovxdb.get_ovx_network(context.session, neutron_network_id).ovx_tenant_id
                 ovx_port = ovxdb.get_ovx_port(context.session, id)
-                (ovx_vdpid, ovx_vport) = ovx_port.ovx_vdpid, ovx_vport.ovx_vport
+                (ovx_vdpid, ovx_vport) = ovx_port.ovx_vdpid, ovx_port.ovx_vport
                 # If OVX throws an exception, assume the virtual port was already gone in OVX
                 # as the physical port removal (by nova) triggers the virtual port removal.
                 # Any other exception (e.g., OVX is down) will lead to failure of this method.
