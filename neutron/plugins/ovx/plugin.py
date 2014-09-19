@@ -229,7 +229,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             port[portbindings.PROFILE] = {'bridge': port_binding.bridge}
             
         return port
-    
+
     def create_network(self, context, network):
         """Creates an OVX-based virtual network.
 
@@ -382,7 +382,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             db_state = port_db['admin_state_up']
         
             # Start or stop port in OVX (data ports only!) as requested
-            if port_db['network_id'] == self.ctrl_network['id']:
+            if self._is_data_port(context, port_db)
                 if (req_state != None) and (req_state != db_state):
                     ovx_tenant_id = ovxdb.get_ovx_network(context.session, port_db['network_id']).ovx_tenant_id
                     ovx_port = ovxdb.get_ovx_port(context.session, id)
@@ -398,7 +398,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             self._process_portbindings_create_and_update(context, port['port'], neutron_port)
 
         return self._extend_port_dict_binding(context, neutron_port)
-    
+
+    def _is_data_port(self, context, port):
+        self._extend_port_dict_binding(context, port)
+        return port.get(portbindings.PROFILE, {}).get('bridge') == cfg.CONF.OVS.data_bridge
+        
     def delete_port(self, context, id):
         """Delete a port.
 
@@ -410,9 +414,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         with context.session.begin(subtransactions=True):
             port_db = super(OVXNeutronPlugin, self).get_port(context, id)
             neutron_network_id = port_db['network_id']
-            
+                        
             # Remove port in OVX only if it's a data port
-            if neutron_network_id != self.ctrl_network['id']:
+            if self._is_data_port(context, port_db):
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
                 ovx_tenant_id = ovxdb.get_ovx_network(context.session, neutron_network_id).ovx_tenant_id
                 ovx_port = ovxdb.get_ovx_port(context.session, id)
