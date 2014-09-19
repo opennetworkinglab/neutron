@@ -35,7 +35,7 @@ def add_port_forwarding(session, port_id, forward_ports):
 def set_port_profile_binding(session, port_id, bridge):
     """Set the port profile binding."""
     query = session.query(ovx_models.PortProfileBinding)
-    result = query.filter_by(id=port_id).one()
+    result = query.filter_by(port_id=port_id).one()
     result['bridge'] = bridge
     session.merge(result)
     session.flush()
