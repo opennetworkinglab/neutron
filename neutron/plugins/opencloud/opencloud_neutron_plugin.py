@@ -90,13 +90,14 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
         return [self._fields(port, fields) for port in ports]
 
     def create_port(self, context, port):
-        """Set port binding to NAT bridge."""
-        if port['port']['network_id'] == self.nat_network['id']:
-            LOG.debug("Setting port binding to nat for port %s" % port['port'])
-            self.base_binding_dict[portbindings.PROFILE] = {'bridge': cfg.CONF.OVS.nat_bridge}
-
-        return super(OpenCloudPluginV2, self).create_port(context, port)
+        neutron_port = super(OpenCloudPluginV2, self).create_port(context, port)
         
+        # Set port binding to NAT bridge
+        if neutron_port['network_id'] == self.nat_network['id']:
+            LOG.debug("Setting port binding to nat for port %s" % neutron_port)
+            opencloud_db_v2.set_port_profile_binding(neutron_port['id'], cfg.CONF.OVS.nat_bridge)
+
+        return self._extend_port_dict_binding(context, neutron_port)        
         
     def update_port(self, context, id, port):
         forward_ports = self._process_nat_update(context, port['port'], id)
@@ -108,4 +109,4 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
                 opencloud_db_v2.add_port_forwarding(session, updated_port['id'], forward_ports)
                 self._extend_port_dict_nat(context, updated_port)
 
-        return updated_port
+        return self._extend_port_dict_binding(updated_port)

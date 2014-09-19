@@ -27,6 +27,11 @@ class NetworkMapping(model_base.BASEV2):
     ovx_tenant_id = sa.Column(sa.Integer, nullable=False)
     ovx_controller = sa.Column(sa.String(36), nullable=False)
 
+    def __repr__(self):
+        return "<NetworkMapping(%s,%d,%s)>" % (self.neutron_network_id,
+                                               self.ovx_tenant_id,
+                                               self.ovx_controller)
+    
 class PortMapping(model_base.BASEV2):
     """Neutron port ID <-> OVX virtual dpid, virtual port number, and host id mapping."""
     __tablename__ = "ovx_ports"
@@ -36,3 +41,25 @@ class PortMapping(model_base.BASEV2):
     ovx_vdpid = sa.Column(sa.BigInteger, nullable=False)
     ovx_vport = sa.Column(sa.Integer, nullable=False)
     ovx_host_id = sa.Column(sa.Integer, nullable=False)
+
+    def __repr__(self):
+        return "<PortMapping(%s,%d,%d,%d)>" % (self.neutron_port_id,
+                                               self.ovx_vdpid,
+                                               self.ovx_vport,
+                                               self.ovx_host_id)
+    
+class PortProfileBinding(model_base.BASEV2):
+    """Represents port profile binding to the port on virtual network."""
+    __tablename__ = 'port_profile'
+
+    port_id = sa.Column(sa.String(36),
+                        sa.ForeignKey('ports.id', ondelete="CASCADE"),
+                        primary_key=True)
+    bridge = sa.Column(sa.String(20), nullable=False)
+
+    def __init__(self, port_id, bridge):
+        self.port_id = port_id
+        self.bridge = bridge
+
+    def __repr__(self):
+        return "<PortProfileBinding(%s,%s)>" % (self.port_id, self.bridge)

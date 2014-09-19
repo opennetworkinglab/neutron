@@ -77,7 +77,7 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
                 # Lookup OVX tenant ID
                 neutron_network_id = port_db['network_id']
-                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, neutron_network_id)
+                ovx_tenant_id = ovxdb.get_ovx_network(rpc_context.session, neutron_network_id).ovx_tenant_id
 
                 # Stop port if requested (port is started by default in OVX)
                 if not port_db['admin_state_up']:
@@ -114,8 +114,9 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
 
                 # Remove port from OVX if it exists, log warning otherwise
                 # Lookup OVX tenant ID, virtual dpid, virtual port number, and host ID
-                ovx_tenant_id = ovxdb.get_ovx_tenant_id(rpc_context.session, port_db['network_id'])
-                (ovx_vdpid, ovx_vport, ovx_host_id) = ovxdb.get_ovx_port(rpc_context.session, port_id)
+                ovx_tenant_id = ovxdb.get_ovx_network(rpc_context.session, port_db['network_id']).ovx_tenant_id
+                ovx_port = ovxdb.get_ovx_port(rpc_context.session, port_id)
+                (ovx_vdpid, ovx_vport) = ovx_port.ovx_vdpid, ovx_port.ovx_vport
                 # If OVX throws an exception, assume the virtual port was already gone in OVX
                 # as the physical port removal (by nova) triggers the virtual port removal.
                 # Any other exception (e.g., OVX is down) will lead to failure of this method.
@@ -221,6 +222,14 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
+    def _extend_port_dict_binding(self, context, port):
+        port_binding = ovxdb.get_port_profile_binding(context.session, port['id'])
+
+        if port_binding:
+            port[portbindings.PROFILE] = {'bridge': port_binding.bridge}
+            
+        return port
+    
     def create_network(self, context, network):
         """Creates an OVX-based virtual network.
 
@@ -280,7 +289,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             
             # Start or stop network as requested
             if (req_state != None) and (req_state != db_state):
-                ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
+                ovx_tenant_id = ovxdb.get_ovx_network(context.session, id).ovx_tenant_id
                 if req_state:
                     self.ovx_client.startNetwork(ovx_tenant_id)
                 else:
@@ -305,28 +314,36 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         with context.session.begin(subtransactions=True):
             # Need to remove the controller before the network,
             # as Nova will also delete the port in Neutron
-            ovx_controller = ovxdb.get_ovx_controller(context.session, id)
+            ovx_controller = ovxdb.get_ovx_network(context.session, id).ovx_controller
             self.ctrl_manager.delete(ovx_controller)
 
             # Remove network from OVX
-            ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, id)
+            ovx_tenant_id = ovxdb.get_ovx_network(context.session, id).tenant_id
             self.ovx_client.removeNetwork(ovx_tenant_id)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_network(context, id)
 
+    def get_port(self, context, id, fields=None):
+        port = super(OVXNeutronPlugin, self).get_port(context,
+                                                      id,
+                                                      fields)
+        self._extend_port_dict_binding(context, port)
+        return self._fields(port, fields)
+
+    def get_ports(self, context, filters=None, fields=None,
+                  sorts=None, limit=None, marker=None, page_reverse=False):
+        res_ports = []
+        ports = super(OVXNeutronPlugin, self).get_ports(context, filters, fields,
+                                                        sorts, limit, marker,
+                                                        page_reverse)
+        for port in ports:
+            port = self._extend_port_dict_binding(context, port)
+            res_ports.append(self._fields(port, fields))
+            
+        return res_ports
+    
     def create_port(self, context, port):
-        """Create a port.
-
-        Create a port, which is a connection point of a device (e.g., a VM
-        NIC) to attach to a L2 neutron network.
-
-        :param context: neutron api request context
-        :param port: dictionary describing the port, with keys as listed in the
-                     :obj:`RESOURCE_ATTRIBUTE_MAP` object in
-                     :file:`neutron/api/v2/attributes.py`.  All keys will be
-                     populated.
-        """
         LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
@@ -337,34 +354,24 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             neutron_port = super(OVXNeutronPlugin, self).create_port(context, port)
 
             # Store the bridge to connect to in the port bindings
-            # Don't change if it has already been set
-            if 'bridge' not in self.base_binding_dict.get(portbindings.PROFILE, {}):
-                if port['port']['network_id'] == self.ctrl_network['id']:
-                    LOG.debug("Setting port binding to ctrl for port %s" % port['port'])
-                    self.base_binding_dict[portbindings.PROFILE] = {'bridge': cfg.CONF.OVS.ctrl_bridge}
-                else:
-                    LOG.debug("Setting port binding to data for port %s" % port['port'])
-                    self.base_binding_dict[portbindings.PROFILE] = {'bridge': cfg.CONF.OVS.data_bridge}
-                    # Ports in data network are DOWN by default - will be updated by agent
-                    ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_DOWN)
+            if neutron_port['network_id'] == self.ctrl_network['id']:
+                LOG.debug("Setting port binding to ctrl for port %s" % neutron_port)
+                bridge = cfg.CONF.OVS.ctrl_bridge
+            else:
+                LOG.debug("Setting port binding to data for port %s" % neutron_port)
+                bridge = cfg.CONF.OVS.data_bridge
+                # Ports in data network are DOWN by default - will be updated by agent
+                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_DOWN)
 
             self._process_portbindings_create_and_update(context, port['port'], neutron_port)
+            ovxdb.add_port_profile_binding(context.session, neutron_port['id'], bridge)
 
             # Can't create the port in OVX yet, we need the dpid & port
             # Wait for agent to tell us
             
-        return neutron_port
+        return self._extend_port_dict_binding(context, neutron_port)
 
     def update_port(self, context, id, port):
-        """Update values of a port.
-
-        :param context: neutron api request context
-        :param id: UUID representing the port to update.
-        :param port: dictionary with keys indicating fields to update.
-                     valid keys are those that have a value of True for
-                     'allow_put' as listed in the :obj:`RESOURCE_ATTRIBUTE_MAP`
-                     object in :file:`neutron/api/v2/attributes.py`.
-        """
         LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
@@ -376,8 +383,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         
             # Start or stop port as requested
             if (req_state != None) and (req_state != db_state):
-                ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, port_db['network_id'])
-                (ovx_vdpid, ovx_vport) = ovxdb.get_ovx_port(context.session, id)
+                ovx_tenant_id = ovxdb.get_ovx_network(context.session, port_db['network_id']).ovx_tenant_id
+                ovx_port = ovxdb.get_ovx_port(context.session, id)
+                (ovx_vdpid, ovx_vport) = ovx_port.vdpid, ovx_port.vport
                 if req_state:
                     self.ovx_client.startPort(ovx_tenant_id, ovx_vdpid, ovx_vport)
                 else:
@@ -388,7 +396,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             self._process_portbindings_create_and_update(context, port['port'], neutron_port)
 
-        return neutron_port
+        return self._extend_port_dict_binding(context, neutron_port)
     
     def delete_port(self, context, id):
         """Delete a port.
@@ -405,8 +413,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Remove port in OVX only if it's a data port
             if neutron_network_id != self.ctrl_network['id']:
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
-                ovx_tenant_id = ovxdb.get_ovx_tenant_id(context.session, neutron_network_id)
-                (ovx_vdpid, ovx_vport, ovx_host_id) = ovxdb.get_ovx_port(context.session, id)
+                ovx_tenant_id = ovxdb.get_ovx_network(context.session, neutron_network_id).tenant_id
+                ovx_port = ovxdb.get_ovx_port(context.session, id)
+                (ovx_vdpid, ovx_vport) = ovx_port.ovx_vdpid, ovx_vport.ovx_vport
                 # If OVX throws an exception, assume the virtual port was already gone in OVX
                 # as the physical port removal (by nova) triggers the virtual port removal.
                 # Any other exception (e.g., OVX is down) will lead to failure of this method.

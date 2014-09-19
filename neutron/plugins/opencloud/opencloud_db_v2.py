@@ -2,6 +2,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import exc
 
 import neutron.db.api as db
+from neutron.plugins.ovx import ovx_models
+
 import opencloud_models_v2
 
 def get_port_forwarding(session, port_id):
@@ -29,3 +31,11 @@ def add_port_forwarding(session, port_id, forward_ports):
         forward = opencloud_models_v2.PortForwarding(port_id, forward_ports)
         session.add(forward)
 
+
+def set_port_profile_binding(session, port_id, bridge):
+    """Set the port profile binding."""
+    query = session.query(ovx_models.PortProfileBinding)
+    result = query.filter_by(id=port_id).one()
+    result['bridge'] = bridge
+    session.merge(result)
+    session.flush()

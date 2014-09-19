@@ -22,17 +22,18 @@ def add_ovx_network(session, neutron_network_id, ovx_tenant_id, ovx_controller):
                                                     ovx_controller=ovx_controller)
     session.add(ovx_network_mapping)
 
-def get_ovx_tenant_id(session, neutron_network_id):
+def get_ovx_network(session, neutron_network_id):
     query = session.query(ovx_models.NetworkMapping)
-    result = query.filter_by(neutron_network_id=neutron_network_id).one()
-    if result:
-        return result.get('ovx_tenant_id')
+    return query.filter_by(neutron_network_id=neutron_network_id).one()
 
-def get_ovx_controller(session, neutron_network_id):
-    query = session.query(ovx_models.NetworkMapping)
-    result = query.filter_by(neutron_network_id=neutron_network_id).one()
-    if result:
-        return result.get('ovx_controller')
+def add_port_profile_binding(session, port_id, bridge):
+    port_profile_binding = ovx_modles.PortProfileBinding(port_id=port_id,
+                                                         bridge=bridge)
+    session.add(port_profile_binding)
+
+def get_port_profile_binding(session, port_id):
+    query = session.query(ovx_models.PortProfileBinding)
+    return query.filter_by(port_id=port_id).one()
 
 def add_ovx_port(session, neutron_port_id, ovx_vdpid, ovx_vport, ovx_host_id):
     ovx_vport_mapping = ovx_models.PortMapping(neutron_port_id=neutron_port_id,
@@ -43,9 +44,7 @@ def add_ovx_port(session, neutron_port_id, ovx_vdpid, ovx_vport, ovx_host_id):
 
 def get_ovx_port(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
-    result = query.filter_by(neutron_port_id=neutron_port_id).one()
-    if result:
-        return (result.get('ovx_vdpid'), result.get('ovx_vport'), result.get('ovx_host_id'))
+    return query.filter_by(neutron_port_id=neutron_port_id).one()
 
 def del_ovx_port(session, neutron_port_id):
     query = session.query(ovx_models.PortMapping)
