@@ -26,6 +26,8 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
         super(OpenCloudPluginV2, self).__init__()
         # Setup NAT network
         self.nat_network = self._setup_db_network(opencloud_constants.NAT_NETWORK, opencloud_constants.NAT_SUBNET)
+        # Setup external network
+        self.ext_network = self._setup_db_network(opencloud_constants.EXT_NETWORK, opencloud_constants.EXT_SUBNET)
     
     def _extend_port_dict_nat(self, context, port):
         forward = opencloud_db_v2.get_port_forwarding(context.session, port['id'])
@@ -72,6 +74,16 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
 
         return forward_ports
 
+    def delete_network(self, context, id):
+        LOG.debug("Neutron OpenCloud:")
+
+        if id == self.nat_network['id']:
+            raise Exception("Illegal request: cannot delete NAT network")
+        elif id == self.ext_network['id']:
+            raise Exception("Illegal request: cannot delete external network")
+        else:
+            return super(OpenCloudPluginV2, self).delete_network(context, id)
+        
     def get_port(self, context, id, fields=None):
         session = context.session
         with session.begin(subtransactions=True):
