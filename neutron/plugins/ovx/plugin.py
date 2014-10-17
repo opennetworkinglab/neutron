@@ -355,10 +355,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             # Store the bridge to connect to in the port bindings
             if neutron_port['network_id'] == self.ctrl_network['id']:
-                LOG.debug("Setting port binding to ctrl for port %s" % neutron_port)
                 bridge = cfg.CONF.OVS.ctrl_bridge
             else:
-                LOG.debug("Setting port binding to data for port %s" % neutron_port)
                 bridge = cfg.CONF.OVS.data_bridge
                 # Ports in data network are DOWN by default - will be updated by agent
                 ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_DOWN)
@@ -368,8 +366,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
             # Can't create the port in OVX yet, we need the dpid & port
             # Wait for agent to tell us
-            
-        return self._extend_port_dict_binding(context, neutron_port)
+
+        neutron_port = self._extend_port_dict_binding(context, neutron_port)
+        LOG.debug("Setting port binding: %s" % neutron_port)
+
+        return neutron_port
 
     def update_port(self, context, id, port):
         LOG.debug("Neutron OVX")
