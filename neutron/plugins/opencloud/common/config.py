@@ -3,6 +3,7 @@ from neutron.agent.common import config
 
 ovs_opts = [
     cfg.StrOpt('nat_bridge', default='br-nat', help=_("NAT network bridge"))
+    cfg.StrOpt('ext_bridge', default='br-ext', help=_("External network bridge"))
 ]
 
 cfg.CONF.register_opts(ovs_opts, "OVS")
