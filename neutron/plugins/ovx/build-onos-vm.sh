@@ -55,13 +55,14 @@ sudo chroot $TMP_DIR apt-get -q update
 sudo chroot $TMP_DIR apt-get install -y -q openjdk-7-jdk git maven
 
 # Install Apache Karaf
-sudo chroot $TMP_DIR curl -o /usr/local/src/apache-karaf-3.0.1.tar.gz http://apache.cs.utah.edu/karaf/3.0.1/apache-karaf-3.0.1.tar.gz
+sudo chroot $TMP_DIR curl -o /usr/local/src/apache-karaf-3.0.1.zip http://archive.apache.org/dist/karaf/3.0.1/apache-karaf-3.0.1.zip
 
 # Install ONOS
 sudo chroot $TMP_DIR git clone ssh://<user>@gerrit.onlab.us:29418/onos-next /usr/local/src/onos
 sudo chroot $TMP_DIR mvn -f /usr/local/src/onos/pom.xml clean install
-sudo chroot $TMP_DIR env KARAF_ZIP=/usr/local/src/apache-karaf-3.0.1.tar.gz /usr/local/src/onos/tools/build/onos-package
-sudo chroot $TMP_DIR mv /tmp/onos-1.0.0-SNAPSHOT.tar.gz /usr/local/src/
+# NECESSARY?
+# sudo chroot $TMP_DIR env ONOS_ROOT=/usr/local/src/onos M2_REPO=/root/.m2/repository KARAF_ZIP=/usr/local/src/apache-karaf-3.0.2.zip /usr/local/src/onos/tools/build/onos-package
+# sudo chroot $TMP_DIR mv /tmp/onos-1.0.0.root.tar.gz /usr/local/src/
 
 # Start ONOS on boot
 sudo chroot $TMP_DIR bash -c 'cat > /etc/init/onos.conf << EOF
@@ -71,7 +72,7 @@ start on runlevel [2345]
 stop on runlevel [!2345]
 
 script
-  exec /usr/bin/java -jar /usr/local/src/onos-1.0.0-SNAPSHOT.tar.gz > /var/log/onos.log 2>&1 &
+  exec /usr/local/src/onos/tools/package/bin/onos-service
 end script
 EOF'
 
