@@ -46,15 +46,11 @@ class OVXPluginApi(agent_rpc.PluginApi):
                                          ports_removed=ports_removed))
 
 class OVXNeutronAgent():
-    def __init__(self, data_bridge, ctrl_bridge, root_helper, polling_interval):
+    def __init__(self, data_bridge, root_helper, polling_interval):
         LOG.info(_("Started OVX Neutron Agent"))
 
-        # Lookup bridges for data and control network
-        # Regular compute nodes will be plugged into the data bridge
-        # Virtual network controllers will be plugged into the control bridge
-        controller = 'tcp:%s:%s' % (cfg.CONF.OVX.of_host, cfg.CONF.OVX.of_port)
+        # Lookup bridge for data network
         self.data_bridge = ovs_lib.OVSBridge(data_bridge, root_helper)
-        self.ctrl_bridge = ovs_lib.OVSBridge(ctrl_bridge, root_helper)
         
         self.polling_interval = polling_interval
         self.dpid = self.data_bridge.get_datapath_id()
@@ -89,8 +85,7 @@ class OVXNeutronAgent():
     
     def _report_state(self):
         try:
-            num_devices = len(self.data_bridge.get_port_name_list() +
-                              self.ctrl_bridge.get_port_name_list())
+            num_devices = len(self.data_bridge.get_port_name_list())
             self.agent_state['configurations']['devices'] = num_devices
             self.state_rpc.report_state(self.context, self.agent_state)
             self.agent_state.pop('start_flag', None)
@@ -164,11 +159,10 @@ def main():
     logging_config.setup_logging(cfg.CONF)
 
     data_bridge = cfg.CONF.OVS.data_bridge
-    control_bridge = cfg.CONF.OVS.ctrl_bridge
     root_helper = cfg.CONF.AGENT.root_helper
     polling_interval = cfg.CONF.AGENT.polling_interval
     
-    agent = OVXNeutronAgent(data_bridge, control_bridge, root_helper, polling_interval)
+    agent = OVXNeutronAgent(data_bridge, root_helper, polling_interval)
 
     LOG.info(_("OVX agent initialized successfully, now running... "))
     agent.daemon_loop()
