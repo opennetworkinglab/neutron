@@ -38,8 +38,8 @@ EXT_SUBNET = {
         'cidr': '171.66.164.0/24',
         'gateway_ip': '171.66.164.1',
         'dns_nameservers': [],
-        'allocation_pools': [{"start": "171.66.164.2", "end": "171.66.164.254"}],
+        'allocation_pools': [{"start": "171.66.164.3", "end": "171.66.164.254"}],
         'host_routes': [],
-        'enable_dhcp': False
+        'enable_dhcp': True
     }
 }

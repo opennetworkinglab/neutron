@@ -26,10 +26,10 @@ CTRL_SUBNET = {
     'subnet': {
         'name': 'OVX_ctrl_subnet',
         'ip_version': 4,
-        'cidr': '192.168.83.0/24',
+        'cidr': '10.68.128.0/23',
         'gateway_ip': None,
         'dns_nameservers': [],
-        'allocation_pools': [{'start': '192.168.83.100', 'end': '192.168.83.254'}],
+        'allocation_pools': [{'start': '10.68.128.100', 'end': '10.68.128.254'}],
         'host_routes': [],
         'enable_dhcp': True
     }
