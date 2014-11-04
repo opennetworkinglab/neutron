@@ -158,7 +158,7 @@ class ControllerManager():
 
         # Fetch IP address of controller instance
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
-        LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
+        LOG.info("Spawned SDN controller image %s: ID %s, IP %s" %  (cfg.CONF.NOVA.image_name, controller_id, controller_ip))
         
         return (controller_id, controller_ip)
 
@@ -403,6 +403,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                         
             # Remove port in OVX only if it's a data port
             if self._is_data_port(context, port_db):
+                log.debug("Removing port from OVX")
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
                 ovx_tenant_id = ovxdb.get_ovx_network(context.session, neutron_network_id).ovx_tenant_id
                 ovx_port = ovxdb.get_ovx_port(context.session, id)
