@@ -418,7 +418,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     LOG.warn("Could not remove OVX port, most likely because physical port was already removed.")
                 
                 # Remove OXV mappings from db
-                ovxdb.del_ovx_port(rpc_context.session, port_id)
+                ovxdb.del_ovx_port(context.session, port_id)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
