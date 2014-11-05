@@ -37,7 +37,7 @@ from neutron.db import portbindings_base
 from neutron.db import portbindings_db
 from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
-from neutron.extensions import topology
+#from neutron.extensions import topology
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.plugins.common import constants as svc_constants
@@ -174,7 +174,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        agents_db.AgentDbMixin,
                        portbindings_db.PortBindingMixin):
 
-    supported_extension_aliases = ['quotas', 'binding', 'agent', 'topology']
+    #supported_extension_aliases = ['quotas', 'binding', 'agent', 'topology']
+    supported_extension_aliases = ['quotas', 'binding', 'agent']
 
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
@@ -233,19 +234,23 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # Subnet value is irrelevant to OVX
                 subnet = '10.0.0.0/24'
 
-                topology_type = net_db.get(topology.TOPOLOGY_TYPE)
-                topology_type_set = attributes.is_attr_set(topology_type)
+                # topology_type = net_db.get(topology.TOPOLOGY_TYPE)
+                # topology_type_set = attributes.is_attr_set(topology_type)
 
-                # Default topology type is bigswitch
-                if not topology_type_set:
-                    topology_type = 'bigswitch'
+                # # Default topology type is bigswitch
+                # if not topology_type_set:
+                #     topology_type = 'bigswitch'
 
-                if topology_type == 'bigswitch':
-                    ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
-                elif topology_type == 'physical':
-                    ovx_tenant_id = self._do_physical_network(ctrl, subnet)
-                else:
-                    raise Exception("Topology type %s not supported")
+                # if topology_type == 'bigswitch':
+                #     ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
+                # elif topology_type == 'physical':
+                #     ovx_tenant_id = self._do_physical_network(ctrl, subnet)
+                # else:
+                #     raise Exception("Topology type %s not supported")
+
+                # Create virtual network
+                ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
+                
                 # Start network if requested
                 if net_db['admin_state_up']:
                     self.ovx_client.startNetwork(ovx_tenant_id)
