@@ -1,6 +1,6 @@
 from neutron.api.v2 import attributes
 
-FORWARD_PORTS = 'nat:forward_ports'
+TOPOLOGY_TYPE = 'topology:type'
 
 EXTENDED_ATTRIBUTES_2_0 = {
     'topology': {

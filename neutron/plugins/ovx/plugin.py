@@ -233,7 +233,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # Subnet value is irrelevant to OVX
                 subnet = '10.0.0.0/24'
 
-                topology_type = net_db.get(topology.TYPE)
+                topology_type = net_db.get(topology.TOPOLOGY_TYPE)
                 topology_type_set = attributes.is_attr_set(topology_type)
 
                 # Default topology type is bigswitch
