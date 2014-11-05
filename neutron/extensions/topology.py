@@ -9,8 +9,8 @@ EXTENDED_ATTRIBUTES_2_0 = {
             TYPE: {'allow_post': True, 'allow_put': False,
                 'default': constants.BIGSWITCH,
                 'validate': {'type:values': [constants.BIGSWITCH, constants.PHYSICAL, constants.CUSTOM]},
-                'is_visible': True},
-            }
+                'is_visible': True
+            },
         }
     }
 }
