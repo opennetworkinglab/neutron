@@ -25,6 +25,7 @@ import time
 from oslo.config import cfg
 
 from neutron import context as ctx
+from neutron.api.v2 import attributes
 from neutron.common import constants as q_const
 from neutron.common import exceptions as q_exc
 from neutron.common import rpc as q_rpc
@@ -36,6 +37,7 @@ from neutron.db import portbindings_base
 from neutron.db import portbindings_db
 from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
+from neutron.extensions import topology
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.plugins.common import constants as svc_constants
@@ -172,7 +174,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        agents_db.AgentDbMixin,
                        portbindings_db.PortBindingMixin):
 
-    supported_extension_aliases = ['quotas', 'binding', 'agent']
+    supported_extension_aliases = ['quotas', 'binding', 'agent', 'topology']
 
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
@@ -231,7 +233,19 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # Subnet value is irrelevant to OVX
                 subnet = '10.0.0.0/24'
 
-                ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
+                topology_type = net_db.get(topology.TYPE)
+                topology_type_set = attributes.is_attr_set(topology_type)
+
+                # Default topology type is bigswitch
+                if not topology_type_set:
+                    topology_type = 'bigswitch'
+
+                if topology_type == 'bigswitch':
+                    ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
+                elif topology_type == 'physical':
+                    ovx_tenant_id = self._do_physical_network(ctrl, subnet)
+                else:
+                    raise Exception("Topology type %s not supported")
                 # Start network if requested
                 if net_db['admin_state_up']:
                     self.ovx_client.startNetwork(ovx_tenant_id)
@@ -436,15 +450,17 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Split subnet in network address and netmask
         (net_address, net_mask) = subnet.split('/')
 
-        # Request physical topology and create virtual network
+        # Request physical topology
         phy_topo = self.ovx_client.getPhysicalTopology()
-        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
 
         # Fail if there are no physical switches
         switches = phy_topo.get('switches')
         if switches == None:
             raise Exception("Cannot create virtual network without physical switches")
 
+        # Create virtual network
+        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
+        
         # Create big switch, remove virtual network if something went wrong
         try:
             # Create virtual switch with all physical dpids
@@ -459,6 +475,66 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return tenant_id
 
+    def _do_physical_network(self, ctrl, subnet, routing='spf', num_backup=1, copy_dpid = False):
+        """Create virtual network in OVX that is a duplicate of the physical topology.
+
+        If any step fails during network creation, no virtual network will be created."""
+
+        if isinstance(ctrl, list):
+            ctrls = ctrl
+        else:
+            ctrls = [ctrl]
+
+        # Split subnet in network address and netmask
+        (net_address, net_mask) = subnet.split('/')
+
+        # Request physical topology
+        phy_topo = self.ovx_client.getPhysicalTopology()
+
+        # Fail if there are no physical switches
+        switches = phy_topo.get('switches')
+        if switches == None:
+            raise Exception("Cannot create virtual network without physical switches")
+
+        # Create virtual network
+        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
+        
+        # Create big switch, remove virtual network if something went wrong
+        try:
+            # Create virtual switch for each physical dpid
+            for dpid in switches:
+                if copy_dpid:
+                    self.ovx_client.createSwitch(tenant_id, [ovxlib.hexToLong(dpid)], dpid=hexToLong(dpid))
+                else:
+                    self.ovx_client.createSwitch(tenant_id, [ovxlib.hexToLong(dpid)])
+
+            # Create virtual ports and connect virtual links
+            connected = []
+            for link in phy_topo['links']:
+                # OVX creates reverse link automatically, so be careful no to create a link twice
+                if (link['src']['dpid'], link['src']['port']) not in connected:
+                    # Create virtual source port
+                    # Type conversions needed because OVX JSON output is stringified
+                    src_dpid = ovxlib.hexToLong(link['src']['dpid'])
+                    src_port = int(link['src']['port'])
+                    (src_vdpid, src_vport) = self.ovx_client.createPort(tenant_id, src_dpid, src_port)
+                 
+                    # Create virtual destination port
+                    dst_dpid = ovxlib.hexToLong(link['dst']['dpid'])
+                    dst_port = int(link['dst']['port'])
+                    (dst_vdpid, dst_vport) = self.ovx_client.createPort(tenant_id, dst_dpid, dst_port)
+        
+                    # Create virtual link
+                    self.ovx_client.connectLink(tenant_id, src_vdpid, src_vport, dst_vdpid, dst_vport, routing, num_backup)
+
+                    # Store reverse link so we don't try to create it again
+                    connected.append((link['dst']['dpid'], link['dst']['port']))
+        except Exception:
+            self.ovx_client.removeNetwork(tenant_id)
+            raise
+
+        return tenant_id
+    
     def _setup_db_network(self, network, subnet):
         """Creates network in Neutron database, returns the network."""
         
