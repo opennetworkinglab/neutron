@@ -107,9 +107,11 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
         # Set port binding to NAT bridge
         if neutron_port['network_id'] == self.nat_network['id']:
             opencloud_db_v2.set_port_profile_binding(context.session, neutron_port['id'], cfg.CONF.OVS.nat_bridge)
+            ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_UP)
         # Set port binding to external bridge
         if neutron_port['network_id'] == self.ext_network['id']:
             opencloud_db_v2.set_port_profile_binding(context.session, neutron_port['id'], cfg.CONF.OVS.ext_bridge)
+            ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_UP)
 
         neutron_port = self._extend_port_dict_binding(context, neutron_port)
         LOG.debug("Setting port binding: %s" % neutron_port)

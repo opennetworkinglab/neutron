@@ -332,8 +332,8 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
-            # Set default port status as active
-            port['port']['status'] = q_const.PORT_STATUS_ACTIVE
+            # Set default port status as down, will be updated by agent (data ports only)
+            port['port']['status'] = q_const.PORT_STATUS_DOWN
 
             # Create port in db
             neutron_port = super(OVXNeutronPlugin, self).create_port(context, port)
@@ -341,10 +341,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Store the bridge to connect to in the port bindings
             if neutron_port['network_id'] == self.ctrl_network['id']:
                 bridge = cfg.CONF.OVS.ctrl_bridge
+                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_UP)
             else:
                 bridge = cfg.CONF.OVS.data_bridge
-                # Ports in data network are DOWN by default - will be updated by agent
-                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_DOWN)
 
             self._process_portbindings_create_and_update(context, port['port'], neutron_port)
             ovxdb.add_port_profile_binding(context.session, neutron_port['id'], bridge)
