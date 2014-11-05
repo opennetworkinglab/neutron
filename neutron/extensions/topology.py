@@ -1,13 +1,17 @@
 from neutron.api.v2 import attributes
+from neutron.plugins.common import constants
 
-TOPOLOGY_TYPE = 'topology:type'
+TYPE = 'topology:type'
 
 EXTENDED_ATTRIBUTES_2_0 = {
-    'topology': {
-        TYPE: {'allow_post': True, 'allow_put': True,
-               'default': attributes.ATTR_NOT_SPECIFIED,
-               'validate': {'type:values': ['bigswitch', 'physical', 'custom']},
-               'is_visible': True},
+    'networks': {
+        'topology': {
+            TYPE: {'allow_post': True, 'allow_put': False,
+                'default': constants.BIGSWITCH,
+                'validate': {'type:values': [constants.BIGSWITCH, constants.PHYSICAL, constants.CUSTOM]},
+                'is_visible': True},
+            }
+        }
     }
 }
 

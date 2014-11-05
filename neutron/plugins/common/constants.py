@@ -66,3 +66,8 @@ FWAAS_DENY = "deny"
 TCP = "tcp"
 UDP = "udp"
 ICMP = "icmp"
+
+# Topology extension constants
+BIGSWITCH = "bigswitch"
+PHYSICAL = "physical"
+CUSTOM = "custom"
