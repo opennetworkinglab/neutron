@@ -239,11 +239,11 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
                 # Default topology type is bigswitch
                 if not topology_type_set:
-                    topology_type = 'bigswitch'
+                    topology_type = svc_constants.BIGSWITCH
 
-                if topology_type == 'bigswitch':
+                if topology_type == svc_constants.BIGSWITCH:
                     ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
-                elif topology_type == 'physical':
+                elif topology_type == svc_constants.PHYSICAL:
                     ovx_tenant_id = self._do_physical_network(ctrl, subnet)
                 else:
                     raise Exception("Topology type %s not supported")
