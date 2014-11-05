@@ -355,7 +355,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             # Store the bridge to connect to in the port bindings
             if neutron_port['network_id'] == self.ctrl_network['id']:
                 bridge = cfg.CONF.OVS.ctrl_bridge
-                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_UP)
+                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_ACTIVE)
             else:
                 bridge = cfg.CONF.OVS.data_bridge
 
