@@ -246,7 +246,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 elif topology_type == svc_constants.PHYSICAL:
                     ovx_tenant_id = self._do_physical_network(ctrl, subnet)
                 else:
-                    raise Exception("Topology type %s not supported")
+                    raise Exception("Topology type %s not supported" % topology_type)
 
                 # Start network if requested
                 if net_db['admin_state_up']:
