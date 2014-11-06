@@ -234,7 +234,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 subnet = '10.0.0.0/24'
 
                 # Create virtual network with requested topology
-                topology_type = network.get(topology.TYPE)
+                topology_type = network['network'].get(topology.TYPE)
                 topology_type_set = attributes.is_attr_set(topology_type)
 
                 # Default topology type is bigswitch
