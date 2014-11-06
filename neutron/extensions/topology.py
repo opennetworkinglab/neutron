@@ -1,11 +1,11 @@
 from neutron.api.v2 import attributes
 from neutron.plugins.common import constants
 
-TOPOLOGY_TYPE = 'topology:type'
+TYPE = 'topology:type'
 
 EXTENDED_ATTRIBUTES_2_0 = {
     'networks': {
-        TOPOLOGY_TYPE: {'allow_post': True, 'allow_put': False,
+        TYPE: {'allow_post': True, 'allow_put': False,
                         'default': constants.BIGSWITCH,
                         'validate': {'type:values': [constants.BIGSWITCH, constants.PHYSICAL, constants.CUSTOM]},
                         'is_visible': True
@@ -20,7 +20,7 @@ class Topology(object):
 
     @classmethod
     def get_alias(cls):
-        return "topo"
+        return "topology"
 
     @classmethod
     def get_description(cls):
