@@ -120,8 +120,6 @@ class OVXNeutronAgent():
 
                     if port_id not in cur_ports:
                         ports_added.append(port_info)
-                        # Hack for Stanford OpenCloud deployment
-                        self.data_bridge.run_vsctl(["--", "set", "port", vif_port.port_name, "tag=418"])
 
                 # List of port IDs
                 ports_removed = []
