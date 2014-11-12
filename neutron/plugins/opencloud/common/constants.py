@@ -35,11 +35,11 @@ EXT_SUBNET = {
     'subnet': {
         'name': 'ext-net',
         'ip_version': 4,
-        'cidr': '171.67.217.212/30',
-        'gateway_ip': '171.67.217.212',
+        'cidr': '171.66.164.0/24',
+        'gateway_ip': '171.66.164.1',
         'dns_nameservers': [],
-        'allocation_pools': [{"start": "171.67.217.213", "end": "171.67.217.214"}],
+        'allocation_pools': [{"start": "171.66.164.3", "end": "171.66.164.254"}],
         'host_routes': [],
-        'enable_dhcp': False
+        'enable_dhcp': True
     }
 }

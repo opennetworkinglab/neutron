@@ -25,6 +25,7 @@ import time
 from oslo.config import cfg
 
 from neutron import context as ctx
+from neutron.api.v2 import attributes
 from neutron.common import constants as q_const
 from neutron.common import exceptions as q_exc
 from neutron.common import rpc as q_rpc
@@ -36,6 +37,7 @@ from neutron.db import portbindings_base
 from neutron.db import portbindings_db
 from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
+from neutron.extensions import topology
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
 from neutron.plugins.common import constants as svc_constants
@@ -95,10 +97,8 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 # Set port in active state in db
                 ovxdb.set_port_status(rpc_context.session, port_db['id'], q_const.PORT_STATUS_ACTIVE)
 
-        # Ports removed on the compute node will be marked as down in the database,
-        # their Neutron/OVX mappings will be deleted from the db,
-        # and they will be deleted from OVX. If the port cannot be found in the db,
-        # delete_port was called first and has already cleaned up everything for us.
+        # Ports removed on the compute node will be marked as down in the database.
+        # Use Neutron API to explicitly remove port from OVX & Neutron.
         for port_id in kwargs.get('ports_removed', []):
 
             with rpc_context.session.begin(subtransactions=True):
@@ -111,23 +111,6 @@ class OVXRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
                 # Set port status to DOWN
                 if port_db['status'] != q_const.PORT_STATUS_DOWN:
                     ovxdb.set_port_status(rpc_context.session, port_id, q_const.PORT_STATUS_DOWN)
-
-                # Remove port from OVX if it exists, log warning otherwise
-                # Lookup OVX tenant ID, virtual dpid, virtual port number, and host ID
-                ovx_tenant_id = ovxdb.get_ovx_network(rpc_context.session, port_db['network_id']).ovx_tenant_id
-                ovx_port = ovxdb.get_ovx_port(rpc_context.session, port_id)
-                (ovx_vdpid, ovx_vport) = ovx_port.ovx_vdpid, ovx_port.ovx_vport
-                # If OVX throws an exception, assume the virtual port was already gone in OVX
-                # as the physical port removal (by nova) triggers the virtual port removal.
-                # Any other exception (e.g., OVX is down) will lead to failure of this method.
-                try:
-                    self.plugin.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
-                except ovxlib.OVXException:
-                    LOG.warn("Could not remove port. Probably because physical port was already removed.")
-
-                # Remove OXV mappings from db
-                ovxdb.del_ovx_port(rpc_context.session, port_id)
-
                                 
 class ControllerManager():
     """Simple manager for SDN controllers. Spawns a VM running a controller for each request
@@ -177,7 +160,7 @@ class ControllerManager():
 
         # Fetch IP address of controller instance
         controller_ip = server.addresses[self.ctrl_network_name][0]['addr']
-        LOG.info("Spawned SDN controller ID %s and IP %s" %  (controller_id, controller_ip))
+        LOG.info("Spawned SDN controller image %s: ID %s, IP %s" %  (cfg.CONF.NOVA.image_name, controller_id, controller_ip))
         
         return (controller_id, controller_ip)
 
@@ -191,7 +174,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                        agents_db.AgentDbMixin,
                        portbindings_db.PortBindingMixin):
 
-    supported_extension_aliases = ['quotas', 'binding', 'agent']
+    supported_extension_aliases = ['quotas', 'binding', 'agent', 'topology']
 
     def __init__(self):
         super(OVXNeutronPlugin, self).__init__()
@@ -250,7 +233,21 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # Subnet value is irrelevant to OVX
                 subnet = '10.0.0.0/24'
 
-                ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
+                # Create virtual network with requested topology
+                topology_type = network['network'].get(topology.TYPE)
+                topology_type_set = attributes.is_attr_set(topology_type)
+
+                # Default topology type is bigswitch
+                if not topology_type_set:
+                    topology_type = svc_constants.BIGSWITCH
+
+                if topology_type == svc_constants.BIGSWITCH:
+                    ovx_tenant_id = self._do_big_switch_network(ctrl, subnet)
+                elif topology_type == svc_constants.PHYSICAL:
+                    ovx_tenant_id = self._do_physical_network(ctrl, subnet)
+                else:
+                    raise Exception("Topology type %s not supported" % topology_type)
+
                 # Start network if requested
                 if net_db['admin_state_up']:
                     self.ovx_client.startNetwork(ovx_tenant_id)
@@ -312,6 +309,10 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
             raise Exception("Illegal request: cannot delete control network")
 
         with context.session.begin(subtransactions=True):
+            # TODO: add check only 1 port remains
+            # if you delete network in ovx, and network removal from neutron db fails,
+            # then you get into an error state
+            
             # Need to remove the controller before the network,
             # as Nova will also delete the port in Neutron
             ovx_controller = ovxdb.get_ovx_network(context.session, id).ovx_controller
@@ -347,29 +348,29 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         LOG.debug("Neutron OVX")
         
         with context.session.begin(subtransactions=True):
-            # Set default port status as active
-            port['port']['status'] = q_const.PORT_STATUS_ACTIVE
+            # Set default port status as down, will be updated by agent (data ports only)
+            port['port']['status'] = q_const.PORT_STATUS_DOWN
 
             # Create port in db
             neutron_port = super(OVXNeutronPlugin, self).create_port(context, port)
 
             # Store the bridge to connect to in the port bindings
             if neutron_port['network_id'] == self.ctrl_network['id']:
-                LOG.debug("Setting port binding to ctrl for port %s" % neutron_port)
                 bridge = cfg.CONF.OVS.ctrl_bridge
+                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_ACTIVE)
             else:
-                LOG.debug("Setting port binding to data for port %s" % neutron_port)
                 bridge = cfg.CONF.OVS.data_bridge
-                # Ports in data network are DOWN by default - will be updated by agent
-                ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_DOWN)
 
             self._process_portbindings_create_and_update(context, port['port'], neutron_port)
             ovxdb.add_port_profile_binding(context.session, neutron_port['id'], bridge)
 
             # Can't create the port in OVX yet, we need the dpid & port
             # Wait for agent to tell us
-            
-        return self._extend_port_dict_binding(context, neutron_port)
+
+        neutron_port = self._extend_port_dict_binding(context, neutron_port)
+        LOG.debug("Setting port binding: %s" % neutron_port)
+
+        return neutron_port
 
     def update_port(self, context, id, port):
         LOG.debug("Neutron OVX")
@@ -417,6 +418,7 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                         
             # Remove port in OVX only if it's a data port
             if self._is_data_port(context, port_db):
+                LOG.debug("Removing port from OVX")
                 # Lookup OVX tenant ID, virtual dpid and virtual port number
                 ovx_tenant_id = ovxdb.get_ovx_network(context.session, neutron_network_id).ovx_tenant_id
                 ovx_port = ovxdb.get_ovx_port(context.session, id)
@@ -430,6 +432,9 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                     self.ovx_client.removePort(ovx_tenant_id, ovx_vdpid, ovx_vport)
                 except ovxlib.OVXException:
                     LOG.warn("Could not remove OVX port, most likely because physical port was already removed.")
+                
+                # Remove OXV mappings from db
+                ovxdb.del_ovx_port(context.session, id)
 
             # Remove network from db
             super(OVXNeutronPlugin, self).delete_port(context, id)
@@ -447,15 +452,17 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
         # Split subnet in network address and netmask
         (net_address, net_mask) = subnet.split('/')
 
-        # Request physical topology and create virtual network
+        # Request physical topology
         phy_topo = self.ovx_client.getPhysicalTopology()
-        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
 
         # Fail if there are no physical switches
         switches = phy_topo.get('switches')
         if switches == None:
             raise Exception("Cannot create virtual network without physical switches")
 
+        # Create virtual network
+        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
+        
         # Create big switch, remove virtual network if something went wrong
         try:
             # Create virtual switch with all physical dpids
@@ -470,6 +477,66 @@ class OVXNeutronPlugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return tenant_id
 
+    def _do_physical_network(self, ctrl, subnet, routing='spf', num_backup=1, copy_dpid = False):
+        """Create virtual network in OVX that is a duplicate of the physical topology.
+
+        If any step fails during network creation, no virtual network will be created."""
+
+        if isinstance(ctrl, list):
+            ctrls = ctrl
+        else:
+            ctrls = [ctrl]
+
+        # Split subnet in network address and netmask
+        (net_address, net_mask) = subnet.split('/')
+
+        # Request physical topology
+        phy_topo = self.ovx_client.getPhysicalTopology()
+
+        # Fail if there are no physical switches
+        switches = phy_topo.get('switches')
+        if switches == None:
+            raise Exception("Cannot create virtual network without physical switches")
+
+        # Create virtual network
+        tenant_id = self.ovx_client.createNetwork(ctrls, net_address, int(net_mask))
+        
+        # Create big switch, remove virtual network if something went wrong
+        try:
+            # Create virtual switch for each physical dpid
+            for dpid in switches:
+                if copy_dpid:
+                    self.ovx_client.createSwitch(tenant_id, [ovxlib.hexToLong(dpid)], dpid=hexToLong(dpid))
+                else:
+                    self.ovx_client.createSwitch(tenant_id, [ovxlib.hexToLong(dpid)])
+
+            # Create virtual ports and connect virtual links
+            connected = []
+            for link in phy_topo['links']:
+                # OVX creates reverse link automatically, so be careful no to create a link twice
+                if (link['src']['dpid'], link['src']['port']) not in connected:
+                    # Create virtual source port
+                    # Type conversions needed because OVX JSON output is stringified
+                    src_dpid = ovxlib.hexToLong(link['src']['dpid'])
+                    src_port = int(link['src']['port'])
+                    (src_vdpid, src_vport) = self.ovx_client.createPort(tenant_id, src_dpid, src_port)
+                 
+                    # Create virtual destination port
+                    dst_dpid = ovxlib.hexToLong(link['dst']['dpid'])
+                    dst_port = int(link['dst']['port'])
+                    (dst_vdpid, dst_vport) = self.ovx_client.createPort(tenant_id, dst_dpid, dst_port)
+        
+                    # Create virtual link
+                    self.ovx_client.connectLink(tenant_id, src_vdpid, src_vport, dst_vdpid, dst_vport, routing, num_backup)
+
+                    # Store reverse link so we don't try to create it again
+                    connected.append((link['dst']['dpid'], link['dst']['port']))
+        except Exception:
+            self.ovx_client.removeNetwork(tenant_id)
+            raise
+
+        return tenant_id
+    
     def _setup_db_network(self, network, subnet):
         """Creates network in Neutron database, returns the network."""
         

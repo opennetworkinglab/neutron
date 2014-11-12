@@ -31,7 +31,6 @@ def add_port_forwarding(session, port_id, forward_ports):
         forward = opencloud_models_v2.PortForwarding(port_id, forward_ports)
         session.add(forward)
 
-
 def set_port_profile_binding(session, port_id, bridge):
     """Set the port profile binding."""
     query = session.query(ovx_models.PortProfileBinding)

@@ -1,6 +1,7 @@
 from oslo.config import cfg
 
 from neutron.api.v2 import attributes
+from neutron.common import constants as q_const
 from neutron.common import exceptions as q_exc
 from neutron.openstack.common import log as logging
 from neutron.plugins.opencloud.common import config
@@ -106,10 +107,17 @@ class OpenCloudPluginV2(OVXNeutronPlugin):
         
         # Set port binding to NAT bridge
         if neutron_port['network_id'] == self.nat_network['id']:
-            LOG.debug("Setting port binding to nat for port %s" % neutron_port)
             opencloud_db_v2.set_port_profile_binding(context.session, neutron_port['id'], cfg.CONF.OVS.nat_bridge)
+            ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_ACTIVE)
+        # Set port binding to external bridge
+        if neutron_port['network_id'] == self.ext_network['id']:
+            opencloud_db_v2.set_port_profile_binding(context.session, neutron_port['id'], cfg.CONF.OVS.ext_bridge)
+            ovxdb.set_port_status(context.session, neutron_port['id'], q_const.PORT_STATUS_ACTIVE)
 
-        return self._extend_port_dict_binding(context, neutron_port)        
+        neutron_port = self._extend_port_dict_binding(context, neutron_port)
+        LOG.debug("Setting port binding: %s" % neutron_port)
+
+        return neutron_port
         
     def update_port(self, context, id, port):
         forward_ports = self._process_nat_update(context, port['port'], id)

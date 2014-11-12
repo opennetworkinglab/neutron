@@ -29,7 +29,7 @@ CTRL_SUBNET = {
         'cidr': '192.168.83.0/24',
         'gateway_ip': None,
         'dns_nameservers': [],
-        'allocation_pools': [{'start': '192.168.83.100', 'end': '192.168.83.254'}],
+        'allocation_pools': [{'start': '192.168.83.20', 'end': '192.168.83.254'}],
         'host_routes': [],
         'enable_dhcp': True
     }
