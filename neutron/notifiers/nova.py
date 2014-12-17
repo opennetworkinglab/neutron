@@ -22,6 +22,7 @@ from sqlalchemy.orm import attributes as sql_attr
 
 from neutron.common import constants
 from neutron import context
+from neutron.i18n import _LE, _LI, _LW
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
@@ -41,12 +42,16 @@ class Notifier(object):
     def __init__(self):
         # TODO(arosen): we need to cache the endpoints and figure out
         # how to deal with different regions here....
-        bypass_url = "%s/%s" % (cfg.CONF.nova_url,
-                                cfg.CONF.nova_admin_tenant_id)
+        if cfg.CONF.nova_admin_tenant_id:
+            bypass_url = "%s/%s" % (cfg.CONF.nova_url,
+                                    cfg.CONF.nova_admin_tenant_id)
+        else:
+            bypass_url = None
+
         self.nclient = nclient.Client(
             username=cfg.CONF.nova_admin_username,
             api_key=cfg.CONF.nova_admin_password,
-            project_id=None,
+            project_id=cfg.CONF.nova_admin_tenant_name,
             tenant_id=cfg.CONF.nova_admin_tenant_id,
             auth_url=cfg.CONF.nova_admin_auth_url,
             cacert=cfg.CONF.nova_ca_certificates_file,
@@ -110,7 +115,7 @@ class Notifier(object):
     @property
     def _plugin(self):
         # NOTE(arosen): this cannot be set in __init__ currently since
-        # this class is initalized at the same time as NeutronManager()
+        # this class is initialized at the same time as NeutronManager()
         # which is decorated with synchronized()
         if not hasattr(self, '_plugin_ref'):
             self._plugin_ref = manager.NeutronManager.get_plugin()
@@ -127,6 +132,18 @@ class Notifier(object):
 
         if not cfg.CONF.notify_nova_on_port_data_changes:
             return
+
+        # When neutron re-assigns floating ip from an original instance
+        # port to a new instance port without disassociate it first, an
+        # event should be sent for original instance, that will make nova
+        # know original instance's info, and update database for it.
+        if (action == 'update_floatingip'
+                and returned_obj['floatingip'].get('port_id')
+                and original_obj.get('port_id')):
+            disassociate_returned_obj = {'floatingip': {'port_id': None}}
+            event = self.create_port_changed_event(action, original_obj,
+                                                   disassociate_returned_obj)
+            self.queue_event(event)
 
         event = self.create_port_changed_event(action, original_obj,
                                                returned_obj)
@@ -162,12 +179,12 @@ class Notifier(object):
         port._notify_event = None
         # If there is no device_id set there is nothing we can do here.
         if not port.device_id:
-            LOG.debug(_("device_id is not set on port yet."))
+            LOG.debug("device_id is not set on port yet.")
             return
 
         if not port.id:
-            LOG.warning(_("Port ID not set! Nova will not be notified of "
-                          "port status change."))
+            LOG.warning(_LW("Port ID not set! Nova will not be notified of "
+                            "port status change."))
             return
 
         # We only want to notify about nova ports.
@@ -191,9 +208,9 @@ class Notifier(object):
             event_name = VIF_PLUGGED
         # All the remaining state transitions are of no interest to nova
         else:
-            LOG.debug(_("Ignoring state change previous_port_status: "
-                        "%(pre_status)s current_port_status: %(cur_status)s"
-                        " port_id %(id)s") %
+            LOG.debug("Ignoring state change previous_port_status: "
+                      "%(pre_status)s current_port_status: %(cur_status)s"
+                      " port_id %(id)s",
                       {'pre_status': previous_port_status,
                        'cur_status': current_port_status,
                        'id': port.id})
@@ -211,26 +228,25 @@ class Notifier(object):
         port._notify_event = None
 
     def send_events(self):
-        batched_events = []
-        for event in range(len(self.pending_events)):
-            batched_events.append(self.pending_events.pop())
-
-        if not batched_events:
+        if not self.pending_events:
             return
 
-        LOG.debug(_("Sending events: %s"), batched_events)
+        batched_events = self.pending_events
+        self.pending_events = []
+
+        LOG.debug("Sending events: %s", batched_events)
         try:
             response = self.nclient.server_external_events.create(
                 batched_events)
         except nova_exceptions.NotFound:
-            LOG.warning(_("Nova returned NotFound for event: %s"),
+            LOG.warning(_LW("Nova returned NotFound for event: %s"),
                         batched_events)
         except Exception:
-            LOG.exception(_("Failed to notify nova on events: %s"),
+            LOG.exception(_LE("Failed to notify nova on events: %s"),
                           batched_events)
         else:
             if not isinstance(response, list):
-                LOG.error(_("Error response returned from nova: %s"),
+                LOG.error(_LE("Error response returned from nova: %s"),
                           response)
                 return
             response_error = False
@@ -241,10 +257,10 @@ class Notifier(object):
                     response_error = True
                     continue
                 if code != 200:
-                    LOG.warning(_("Nova event: %s returned with failed "
-                                  "status"), event)
+                    LOG.warning(_LW("Nova event: %s returned with failed "
+                                    "status"), event)
                 else:
-                    LOG.info(_("Nova event response: %s"), event)
+                    LOG.info(_LI("Nova event response: %s"), event)
             if response_error:
-                LOG.error(_("Error response returned from nova: %s"),
+                LOG.error(_LE("Error response returned from nova: %s"),
                           response)

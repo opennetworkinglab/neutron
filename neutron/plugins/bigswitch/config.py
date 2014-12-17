@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2014 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -13,10 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mandeep Dhami, Big Switch Networks, Inc.
-# @author: Sumit Naiksatam, sumitnaiksatam@gmail.com, Big Switch Networks, Inc.
-# @author: Kevin Benton, Big Switch Networks, Inc.
 
 """
 This module manages configuration options
@@ -63,7 +58,7 @@ restproxy_opts = [
                        "synchronization to the controller.")),
     cfg.IntOpt('consistency_interval', default=60,
                help=_("Time between verifications that the backend controller "
-                      "database is consistent with Neutron")),
+                      "database is consistent with Neutron. (0 to disable)")),
     cfg.IntOpt('server_timeout', default=10,
                help=_("Maximum number of seconds to wait for proxy request "
                       "to connect and complete.")),

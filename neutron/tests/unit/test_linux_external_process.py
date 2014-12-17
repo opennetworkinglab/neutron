@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 New Dream Network, LLC (DreamHost)
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mark McClain, DreamHost
 
 import mock
 
@@ -45,7 +41,8 @@ class TestProcessManager(base.BaseTestCase):
                 name.assert_called_once_with(ensure_pids_dir=True)
                 self.execute.assert_called_once_with(['the', 'cmd'],
                                                      root_helper='sudo',
-                                                     check_exit_code=True)
+                                                     check_exit_code=True,
+                                                     extra_ok_codes=None)
 
     def test_enable_with_namespace(self):
         callback = mock.Mock()
@@ -63,8 +60,8 @@ class TestProcessManager(base.BaseTestCase):
                     name.assert_called_once_with(ensure_pids_dir=True)
                     ip_lib.assert_has_calls([
                         mock.call.IPWrapper('sudo', 'ns'),
-                        mock.call.IPWrapper().netns.execute(['the', 'cmd'])]
-                    )
+                        mock.call.IPWrapper().netns.execute(['the', 'cmd'],
+                                                            addl_env=None)])
 
     def test_enable_with_namespace_process_active(self):
         callback = mock.Mock()
@@ -122,15 +119,15 @@ class TestProcessManager(base.BaseTestCase):
                     debug.assert_called_once_with(mock.ANY, mock.ANY)
 
     def test_get_pid_file_name_existing(self):
-        with mock.patch.object(ep.os.path, 'isdir') as isdir:
+        with mock.patch.object(ep.utils.os.path, 'isdir') as isdir:
             isdir.return_value = True
             manager = ep.ProcessManager(self.conf, 'uuid')
             retval = manager.get_pid_file_name(ensure_pids_dir=True)
             self.assertEqual(retval, '/var/path/uuid.pid')
 
     def test_get_pid_file_name_not_existing(self):
-        with mock.patch.object(ep.os.path, 'isdir') as isdir:
-            with mock.patch.object(ep.os, 'makedirs') as makedirs:
+        with mock.patch.object(ep.utils.os.path, 'isdir') as isdir:
+            with mock.patch.object(ep.utils.os, 'makedirs') as makedirs:
                 isdir.return_value = False
                 manager = ep.ProcessManager(self.conf, 'uuid')
                 retval = manager.get_pid_file_name(ensure_pids_dir=True)
@@ -138,7 +135,7 @@ class TestProcessManager(base.BaseTestCase):
                 makedirs.assert_called_once_with('/var/path', 0o755)
 
     def test_get_pid_file_name_default(self):
-        with mock.patch.object(ep.os.path, 'isdir') as isdir:
+        with mock.patch.object(ep.utils.os.path, 'isdir') as isdir:
             isdir.return_value = True
             manager = ep.ProcessManager(self.conf, 'uuid')
             retval = manager.get_pid_file_name(ensure_pids_dir=False)

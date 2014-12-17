@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (C) 2012 Midokura Japan K.K.
 # Copyright (C) 2013 Midokura PTE LTD
 # All Rights Reserved.
@@ -15,9 +13,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Ryu Ishimoto, Midokura Japan KK
-# @author: Tomoe Sugihara, Midokura Japan KK
 import sys
 
 import mock
@@ -97,14 +92,18 @@ class MidoClientTestCase(testtools.TestCase):
     def test_delete_dhcp(self):
 
         bridge = mock.Mock()
-        subnet = mock.Mock()
-        subnet.get_subnet_prefix.return_value = "10.0.0.0"
-        subnets = mock.MagicMock(return_value=[subnet])
+        subnet1 = mock.Mock()
+        subnet1.get_subnet_prefix.return_value = "10.0.0.0"
+        subnet1.get_subnet_length.return_value = "16"
+        subnet2 = mock.Mock()
+        subnet2.get_subnet_prefix.return_value = "10.0.0.0"
+        subnet2.get_subnet_length.return_value = "24"
+        subnets = mock.MagicMock(return_value=[subnet1, subnet2])
         bridge.get_dhcp_subnets.side_effect = subnets
         self.client.delete_dhcp(bridge, "10.0.0.0/24")
         bridge.assert_has_calls(mock.call.get_dhcp_subnets)
-        subnet.assert_has_calls([mock.call.get_subnet_prefix(),
-                                mock.call.delete()])
+        self.assertFalse(subnet1.delete.called)
+        subnet2.delete.assert_called_once_with()
 
     def test_add_dhcp_host(self):
 

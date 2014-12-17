@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2014 OpenStack Foundation
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,20 +25,17 @@ Create Date: 2014-02-11 23:21:59.577972
 revision = '50d5ba354c23'
 down_revision = '27cc183af192'
 
-# Change to ['*'] if this migration applies to all plugins
-
-migration_for_plugins = [
-    'neutron.plugins.ml2.plugin.Ml2Plugin'
-]
-
 from alembic import op
 import sqlalchemy as sa
 
 from neutron.db import migration
 
 
-def upgrade(active_plugins=None, options=None):
-    if not migration.should_run(active_plugins, migration_for_plugins):
+def upgrade():
+
+    if not migration.schema_has_table('ml2_port_bindings'):
+        # In the database we are migrating from, the configured plugin
+        # did not create the ml2_port_bindings table.
         return
 
     op.add_column('ml2_port_bindings',
@@ -69,31 +64,5 @@ def upgrade(active_plugins=None, options=None):
         op.execute("CALL SYSPROC.ADMIN_CMD('REORG TABLE ml2_port_bindings')")
 
 
-def downgrade(active_plugins=None, options=None):
-    if not migration.should_run(active_plugins, migration_for_plugins):
-        return
-
-    if op.get_bind().engine.name == 'ibm_db_sa':
-        # Note(xuhanp): DB2 doesn't allow nullable=False Column with
-        # "DEFAULT" clause not specified. So server_default is used.
-        # Using sa.text will result "DEFAULT 0" for cap_port_filter.
-        op.add_column('ml2_port_bindings',
-                      sa.Column('cap_port_filter', sa.Boolean(),
-                                nullable=False,
-                                server_default=sa.text("0")))
-        op.execute(
-            "UPDATE ml2_port_bindings SET"
-            " cap_port_filter = 1"
-            " WHERE vif_details LIKE '%\"port_filter\": true%'")
-    else:
-        op.add_column('ml2_port_bindings',
-                      sa.Column('cap_port_filter', sa.Boolean(),
-                                nullable=False,
-                                server_default=sa.text("false")))
-        op.execute(
-            "UPDATE ml2_port_bindings SET"
-            " cap_port_filter = true"
-            " WHERE vif_details LIKE '%\"port_filter\": true%'")
-    op.drop_column('ml2_port_bindings', 'vif_details')
-    if op.get_bind().engine.name == 'ibm_db_sa':
-        op.execute("CALL SYSPROC.ADMIN_CMD('REORG TABLE ml2_port_bindings')")
+def downgrade():
+    pass

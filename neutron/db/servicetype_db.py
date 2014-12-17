@@ -12,15 +12,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-#    @author: Salvatore Orlando, VMware
-#
 
 import sqlalchemy as sa
 
-from neutron.db import api as db
 from neutron.db import model_base
-from neutron.db import models_v2
 from neutron.openstack.common import log as logging
 from neutron.services import provider_configuration as pconf
 
@@ -30,7 +25,7 @@ LOG = logging.getLogger(__name__)
 class ProviderResourceAssociation(model_base.BASEV2):
     provider_name = sa.Column(sa.String(255),
                               nullable=False, primary_key=True)
-    # should be manualy deleted on resource deletion
+    # should be manually deleted on resource deletion
     resource_id = sa.Column(sa.String(36), nullable=False, primary_key=True,
                             unique=True)
 
@@ -47,12 +42,7 @@ class ServiceTypeManager(object):
         return cls._instance
 
     def __init__(self):
-        self._initialize_db()
         self._load_conf()
-
-    def _initialize_db(self):
-        db.configure_db()
-        db.register_models(models_v2.model_base.BASEV2)
 
     def _load_conf(self):
         self.conf = pconf.ProviderConfiguration(

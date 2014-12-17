@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -17,9 +15,11 @@
 
 import contextlib
 import copy
+import itertools
 
 import mock
 from oslo.config import cfg
+from oslo.utils import importutils
 from testtools import matchers
 import webob.exc
 
@@ -30,17 +30,17 @@ from neutron.api.v2 import attributes
 from neutron.api.v2 import router
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
+from neutron.common import ipv6_utils
 from neutron.common import test_lib
 from neutron.common import utils
 from neutron import context
-from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
 from neutron.db import models_v2
 from neutron import manager
-from neutron.openstack.common import importutils
 from neutron.tests import base
 from neutron.tests.unit import test_extensions
 from neutron.tests.unit import testlib_api
+from neutron.tests.unit import testlib_plugin
 
 DB_PLUGIN_KLASS = 'neutron.db.db_base_plugin_v2.NeutronDbPluginV2'
 
@@ -63,7 +63,8 @@ def _fake_get_sorting_helper(self, request):
     return api_common.SortingEmulatedHelper(request, self._attr_info)
 
 
-class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
+class NeutronDbPluginV2TestCase(testlib_api.WebTestCase,
+                                testlib_plugin.PluginSetupHelper):
     fmt = 'json'
     resource_prefix_map = {}
 
@@ -89,12 +90,6 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
         if not plugin:
             plugin = DB_PLUGIN_KLASS
 
-        # Create the default configurations
-        args = ['--config-file', base.etcdir('neutron.conf.test')]
-        # If test_config specifies some config-file, use it, as well
-        for config_file in test_lib.test_config.get('config_files', []):
-            args.extend(['--config-file', config_file])
-        self.config_parse(args=args)
         # Update the plugin
         self.setup_coreplugin(plugin)
         cfg.CONF.set_override(
@@ -150,12 +145,17 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
         self._skip_native_pagination = None
         self._skip_native_sortin = None
         self.ext_api = None
-        # NOTE(jkoelker) for a 'pluggable' framework, Neutron sure
-        #                doesn't like when the plugin changes ;)
-        db.clear_db()
         # Restore the original attribute map
         attributes.RESOURCE_ATTRIBUTE_MAP = self._attribute_map_bk
         super(NeutronDbPluginV2TestCase, self).tearDown()
+
+    def setup_config(self):
+        # Create the default configurations
+        args = ['--config-file', base.etcdir('neutron.conf.test')]
+        # If test_config specifies some config-file, use it, as well
+        for config_file in test_lib.test_config.get('config_files', []):
+            args.extend(['--config-file', config_file])
+        super(NeutronDbPluginV2TestCase, self).setup_config(args=args)
 
     def _req(self, method, resource, data=None, fmt=None, id=None, params=None,
              action=None, subresource=None, sub_id=None, context=None):
@@ -353,7 +353,7 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
         if ('device_owner' in kwargs and
             kwargs['device_owner'] == constants.DEVICE_OWNER_DHCP and
             'host' in kwargs and
-            not 'device_id' in kwargs):
+            'device_id' not in kwargs):
             device_id = utils.get_dhcp_agent_device_id(net_id, kwargs['host'])
             data['port']['device_id'] = device_id
         port_req = self.new_create_request('ports', data, fmt)
@@ -369,10 +369,12 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
 
     def _list_ports(self, fmt, expected_res_status=None,
                     net_id=None, **kwargs):
-        query_params = None
+        query_params = []
         if net_id:
-            query_params = "network_id=%s" % net_id
-        port_req = self.new_list_request('ports', fmt, query_params)
+            query_params.append("network_id=%s" % net_id)
+        if kwargs.get('device_owner'):
+            query_params.append("device_owner=%s" % kwargs.get('device_owner'))
+        port_req = self.new_list_request('ports', fmt, '&'.join(query_params))
         if ('set_context' in kwargs and
                 kwargs['set_context'] is True and
                 'tenant_id' in kwargs):
@@ -519,17 +521,10 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
     def network(self, name='net1',
                 admin_state_up=True,
                 fmt=None,
-                do_delete=True,
                 **kwargs):
         network = self._make_network(fmt or self.fmt, name,
                                      admin_state_up, **kwargs)
         yield network
-        if do_delete:
-            # The do_delete parameter allows you to control whether the
-            # created network is immediately deleted again. Therefore, this
-            # function is also usable in tests, which require the creation
-            # of many networks.
-            self._delete('networks', network['network']['id'])
 
     @contextlib.contextmanager
     def subnet(self, network=None,
@@ -542,7 +537,6 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
                dns_nameservers=None,
                host_routes=None,
                shared=None,
-               do_delete=True,
                ipv6_ra_mode=None,
                ipv6_address_mode=None):
         with optional_ctx(network, self.network) as network_to_use:
@@ -559,18 +553,13 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
                                        ipv6_ra_mode=ipv6_ra_mode,
                                        ipv6_address_mode=ipv6_address_mode)
             yield subnet
-            if do_delete:
-                self._delete('subnets', subnet['subnet']['id'])
 
     @contextlib.contextmanager
-    def port(self, subnet=None, fmt=None, no_delete=False,
-             **kwargs):
+    def port(self, subnet=None, fmt=None, **kwargs):
         with optional_ctx(subnet, self.subnet) as subnet_to_use:
             net_id = subnet_to_use['subnet']['network_id']
             port = self._make_port(fmt or self.fmt, net_id, **kwargs)
             yield port
-            if not no_delete:
-                self._delete('ports', port['port']['id'])
 
     def _test_list_with_sort(self, resource,
                              items, sorts, resources=None, query_params=''):
@@ -587,8 +576,7 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
         resource = resource.replace('-', '_')
         resources = resources.replace('-', '_')
         expected_res = [item[resource]['id'] for item in items]
-        self.assertEqual(sorted([n['id'] for n in res[resources]]),
-                         sorted(expected_res))
+        self.assertEqual(expected_res, [n['id'] for n in res[resources]])
 
     def _test_list_with_pagination(self, resource, items, sort,
                                    limit, expected_page_num,
@@ -621,10 +609,9 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
                                                          '', content_type)
                         self.assertEqual(len(res[resources]),
                                          limit)
-        self.assertEqual(page_num, expected_page_num)
-        self.assertEqual(sorted([n[verify_key] for n in items_res]),
-                         sorted([item[resource][verify_key]
-                                for item in items]))
+        self.assertEqual(expected_page_num, page_num)
+        self.assertEqual([item[resource][verify_key] for item in items],
+                         [n[verify_key] for n in items_res])
 
     def _test_list_with_pagination_reverse(self, resource, items, sort,
                                            limit, expected_page_num,
@@ -660,11 +647,10 @@ class NeutronDbPluginV2TestCase(testlib_api.WebTestCase):
                                                          '', content_type)
                         self.assertEqual(len(res[resources]),
                                          limit)
-        self.assertEqual(page_num, expected_page_num)
+        self.assertEqual(expected_page_num, page_num)
         expected_res = [item[resource]['id'] for item in items]
         expected_res.reverse()
-        self.assertEqual(sorted([n['id'] for n in item_res]),
-                         sorted(expected_res))
+        self.assertEqual(expected_res, [n['id'] for n in item_res])
 
 
 class TestBasicGet(NeutronDbPluginV2TestCase):
@@ -791,7 +777,7 @@ class TestPortsV2(NeutronDbPluginV2TestCase):
             self.assertEqual('myname', port['port']['name'])
 
     def test_create_port_as_admin(self):
-        with self.network(do_delete=False) as network:
+        with self.network() as network:
             self._create_port(self.fmt,
                               network['network']['id'],
                               webob.exc.HTTPCreated.code,
@@ -1066,7 +1052,7 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
             self.assertEqual(port['port']['id'], sport['port']['id'])
 
     def test_delete_port(self):
-        with self.port(no_delete=True) as port:
+        with self.port() as port:
             self._delete('ports', port['port']['id'])
             self._show('ports', port['port']['id'],
                        expected_code=webob.exc.HTTPNotFound.code)
@@ -1105,6 +1091,14 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
         port = self._update('ports', port['port']['id'], data,
                             neutron_context=neutron_context)
         self.assertEqual(port['port']['admin_state_up'], False)
+
+    def test_update_device_id_unchanged(self):
+        with self.port() as port:
+            data = {'port': {'admin_state_up': True,
+                             'device_id': port['port']['device_id']}}
+            req = self.new_update_request('ports', data, port['port']['id'])
+            res = self.deserialize(self.fmt, req.get_response(self.api))
+            self.assertEqual(res['port']['admin_state_up'], True)
 
     def test_update_device_id_null(self):
         with self.port() as port:
@@ -1145,7 +1139,7 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                                  data['port']['fixed_ips'])
 
     def test_no_more_port_exception(self):
-        with self.subnet(cidr='10.0.0.0/32') as subnet:
+        with self.subnet(cidr='10.0.0.0/32', gateway_ip=None) as subnet:
             id = subnet['subnet']['network_id']
             res = self._create_port(self.fmt, id)
             data = self.deserialize(self.fmt, res)
@@ -1239,6 +1233,34 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 self.assertEqual(ips[1]['ip_address'], '10.0.0.4')
                 self.assertEqual(ips[1]['subnet_id'], subnet['subnet']['id'])
 
+    def test_update_port_invalid_fixed_ip_address_v6_slaac(self):
+        with self.subnet(
+            cidr='2607:f0d0:1002:51::/64',
+            ip_version=6,
+            ipv6_address_mode=constants.IPV6_SLAAC,
+            gateway_ip=attributes.ATTR_NOT_SPECIFIED) as subnet:
+            with self.port(subnet=subnet) as port:
+                ips = port['port']['fixed_ips']
+                self.assertEqual(len(ips), 1)
+                port_mac = port['port']['mac_address']
+                subnet_cidr = subnet['subnet']['cidr']
+                eui_addr = str(ipv6_utils.get_ipv6_addr_by_EUI64(subnet_cidr,
+                                                                 port_mac))
+                self.assertEqual(ips[0]['ip_address'], eui_addr)
+                self.assertEqual(ips[0]['subnet_id'], subnet['subnet']['id'])
+
+                data = {'port': {'fixed_ips': [{'subnet_id':
+                                                subnet['subnet']['id'],
+                                                'ip_address':
+                                                '2607:f0d0:1002:51::5'}]}}
+                req = self.new_update_request('ports', data,
+                                              port['port']['id'])
+                res = req.get_response(self.api)
+                err = self.deserialize(self.fmt, res)
+                self.assertEqual(res.status_int,
+                                 webob.exc.HTTPClientError.code)
+                self.assertEqual(err['NeutronError']['type'], 'InvalidInput')
+
     def test_requested_duplicate_mac(self):
         with self.port() as port:
             mac = port['port']['mac_address']
@@ -1300,18 +1322,6 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 net_id = port['port']['network_id']
                 res = self._create_port(self.fmt, net_id=net_id, **kwargs)
                 self.assertEqual(res.status_int, webob.exc.HTTPConflict.code)
-
-    def test_requested_subnet_delete(self):
-        with self.subnet() as subnet:
-            with self.port(subnet=subnet) as port:
-                ips = port['port']['fixed_ips']
-                self.assertEqual(len(ips), 1)
-                self.assertEqual(ips[0]['ip_address'], '10.0.0.2')
-                self.assertEqual(ips[0]['subnet_id'], subnet['subnet']['id'])
-                req = self.new_delete_request('subnet',
-                                              subnet['subnet']['id'])
-                res = req.get_response(self.api)
-                self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
 
     def test_requested_subnet_id(self):
         with self.subnet() as subnet:
@@ -1396,6 +1406,91 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
                 self.assertEqual(ips[1]['subnet_id'], subnet2['subnet']['id'])
                 self._delete('ports', port3['port']['id'])
                 self._delete('ports', port4['port']['id'])
+
+    def test_requested_invalid_fixed_ip_address_v6_slaac(self):
+        with self.subnet(gateway_ip='fe80::1',
+                         cidr='2607:f0d0:1002:51::/64',
+                         ip_version=6,
+                         ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
+            kwargs = {"fixed_ips": [{'subnet_id': subnet['subnet']['id'],
+                                     'ip_address': '2607:f0d0:1002:51::5'}]}
+            net_id = subnet['subnet']['network_id']
+            res = self._create_port(self.fmt, net_id=net_id, **kwargs)
+            self.assertEqual(res.status_int,
+                             webob.exc.HTTPClientError.code)
+
+    def test_requested_fixed_ip_address_v6_slaac_router_iface(self):
+        with self.subnet(gateway_ip='fe80::1',
+                         cidr='fe80::/64',
+                         ip_version=6,
+                         ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
+            kwargs = {"fixed_ips": [{'subnet_id': subnet['subnet']['id'],
+                                     'ip_address': 'fe80::1'}]}
+            net_id = subnet['subnet']['network_id']
+            device_owner = constants.DEVICE_OWNER_ROUTER_INTF
+            res = self._create_port(self.fmt, net_id=net_id,
+                                    device_owner=device_owner, **kwargs)
+            port = self.deserialize(self.fmt, res)
+            self.assertEqual(len(port['port']['fixed_ips']), 1)
+            self.assertEqual(port['port']['fixed_ips'][0]['ip_address'],
+                             'fe80::1')
+
+    def test_requested_subnet_id_v6_slaac(self):
+        with self.subnet(gateway_ip='fe80::1',
+                         cidr='2607:f0d0:1002:51::/64',
+                         ip_version=6,
+                         ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
+            with self.port(subnet,
+                           fixed_ips=[{'subnet_id':
+                                       subnet['subnet']['id']}]) as port:
+                port_mac = port['port']['mac_address']
+                subnet_cidr = subnet['subnet']['cidr']
+                eui_addr = str(ipv6_utils.get_ipv6_addr_by_EUI64(subnet_cidr,
+                                                                 port_mac))
+                self.assertEqual(port['port']['fixed_ips'][0]['ip_address'],
+                                 eui_addr)
+
+    def test_requested_subnet_id_v4_and_v6_slaac(self):
+        with self.network() as network:
+            with contextlib.nested(
+                self.subnet(network),
+                self.subnet(network,
+                            cidr='2607:f0d0:1002:51::/64',
+                            ip_version=6,
+                            gateway_ip='fe80::1',
+                            ipv6_address_mode=constants.IPV6_SLAAC)
+            ) as (subnet, subnet2):
+                with self.port(
+                    subnet,
+                    fixed_ips=[{'subnet_id': subnet['subnet']['id']},
+                               {'subnet_id': subnet2['subnet']['id']}]
+                ) as port:
+                    ips = port['port']['fixed_ips']
+                    self.assertEqual(len(ips), 2)
+                    self.assertEqual(ips[0]['ip_address'], '10.0.0.2')
+                    port_mac = port['port']['mac_address']
+                    subnet_cidr = subnet2['subnet']['cidr']
+                    eui_addr = str(ipv6_utils.get_ipv6_addr_by_EUI64(
+                            subnet_cidr, port_mac))
+                    self.assertEqual(ips[1]['ip_address'], eui_addr)
+
+    def test_ip_allocation_for_ipv6_subnet_slaac_address_mode(self):
+        res = self._create_network(fmt=self.fmt, name='net',
+                                   admin_state_up=True)
+        network = self.deserialize(self.fmt, res)
+        v6_subnet = self._make_subnet(self.fmt, network,
+                                      gateway='fe80::1',
+                                      cidr='fe80::/64',
+                                      ip_version=6,
+                                      ipv6_ra_mode=None,
+                                      ipv6_address_mode=constants.IPV6_SLAAC)
+        port = self._make_port(self.fmt, network['network']['id'])
+        self.assertEqual(len(port['port']['fixed_ips']), 1)
+        port_mac = port['port']['mac_address']
+        subnet_cidr = v6_subnet['subnet']['cidr']
+        eui_addr = str(ipv6_utils.get_ipv6_addr_by_EUI64(subnet_cidr,
+                                                         port_mac))
+        self.assertEqual(port['port']['fixed_ips'][0]['ip_address'], eui_addr)
 
     def test_range_allocation(self):
         with self.subnet(gateway_ip='10.0.0.3',
@@ -1652,8 +1747,8 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
         ctx = context.get_admin_context()
         with self.subnet() as subnet:
             with contextlib.nested(
-                self.port(subnet=subnet, device_id='owner1', no_delete=True),
-                self.port(subnet=subnet, device_id='owner1', no_delete=True),
+                self.port(subnet=subnet, device_id='owner1'),
+                self.port(subnet=subnet, device_id='owner1'),
                 self.port(subnet=subnet, device_id='owner2'),
             ) as (p1, p2, p3):
                 network_id = subnet['subnet']['network_id']
@@ -1670,7 +1765,7 @@ fixed_ips=ip_address%%3D%s&fixed_ips=ip_address%%3D%s&fixed_ips=subnet_id%%3D%s
         ctx = context.get_admin_context()
         with self.subnet() as subnet:
             with contextlib.nested(
-                self.port(subnet=subnet, device_id='owner1', no_delete=True),
+                self.port(subnet=subnet, device_id='owner1'),
                 self.port(subnet=subnet, device_id='owner1'),
                 self.port(subnet=subnet, device_id='owner2'),
             ) as (p1, p2, p3):
@@ -1784,7 +1879,7 @@ class TestNetworksV2(NeutronDbPluginV2TestCase):
             res = self.deserialize(self.fmt, req.get_response(self.api))
             self.assertTrue(res['network']['shared'])
 
-    def test_update_network_set_shared_owner_returns_404(self):
+    def test_update_network_set_shared_owner_returns_403(self):
         with self.network(shared=False) as network:
             net_owner = network['network']['tenant_id']
             data = {'network': {'shared': True}}
@@ -1793,7 +1888,7 @@ class TestNetworksV2(NeutronDbPluginV2TestCase):
                                           network['network']['id'])
             req.environ['neutron.context'] = context.Context('u', net_owner)
             res = req.get_response(self.api)
-            self.assertEqual(res.status_int, webob.exc.HTTPNotFound.code)
+            self.assertEqual(res.status_int, webob.exc.HTTPForbidden.code)
 
     def test_update_network_with_subnet_set_shared(self):
         with self.network(shared=False) as network:
@@ -2264,7 +2359,8 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                          sorted(expected[k]))
                     else:
                         self.assertEqual(subnet['subnet'][k], expected[k])
-            return subnet
+        self._delete('subnets', subnet['subnet']['id'])
+        return subnet
 
     def test_create_subnet(self):
         gateway_ip = '10.0.0.1'
@@ -2325,6 +2421,17 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             res = subnet_req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
 
+    def test_create_subnet_bad_V4_cidr_prefix_len(self):
+        with self.network() as network:
+            data = {'subnet': {'network_id': network['network']['id'],
+                    'cidr': '0.0.0.0/0',
+                    'ip_version': '4',
+                    'tenant_id': network['network']['tenant_id'],
+                    'gateway_ip': '0.0.0.1'}}
+            subnet_req = self.new_create_request('subnets', data)
+            res = subnet_req.get_response(self.api)
+            self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
+
     def test_create_subnet_bad_V6_cidr(self):
         with self.network() as network:
             data = {'subnet': {'network_id': network['network']['id'],
@@ -2335,6 +2442,18 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             subnet_req = self.new_create_request('subnets', data)
             res = subnet_req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
+
+    def test_create_subnet_V6_slaac_big_prefix(self):
+        with self.network() as network:
+            data = {'subnet': {'network_id': network['network']['id'],
+                    'cidr': '2014::/65',
+                    'ip_version': '6',
+                    'tenant_id': network['network']['tenant_id'],
+                    'gateway_ip': 'fe80::1',
+                    'ipv6_address_mode': 'slaac'}}
+            subnet_req = self.new_create_request('subnets', data)
+            res = subnet_req.get_response(self.api)
+            self.assertEqual(webob.exc.HTTPClientError.code, res.status_int)
 
     def test_create_2_subnets_overlapping_cidr_allowed_returns_200(self):
         cidr_1 = '10.0.0.0/23'
@@ -2406,6 +2525,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                     res = self._create_subnet_bulk(self.fmt, 2,
                                                    net['network']['id'],
                                                    'test')
+                self._delete('networks', net['network']['id'])
                 # We expect a 500 as we injected a fault in the plugin
                 self._validate_behavior_on_bulk_failure(
                     res, 'subnets', webob.exc.HTTPServerError.code
@@ -2509,8 +2629,8 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
         with self.network() as network:
             with contextlib.nested(
                 self.subnet(network=network),
-                self.subnet(network=network, cidr='10.0.1.0/24',
-                            do_delete=False)) as (subnet1, subnet2):
+                self.subnet(network=network, cidr='10.0.1.0/24'),
+            ) as (subnet1, subnet2):
                 subnet1_id = subnet1['subnet']['id']
                 subnet2_id = subnet2['subnet']['id']
                 with self.port(
@@ -2521,6 +2641,36 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                     self.assertEqual(res.status_int,
                                      webob.exc.HTTPNoContent.code)
 
+    def test_delete_subnet_ipv6_slaac_port_exists(self):
+        """Test IPv6 SLAAC subnet delete when a port is still using subnet."""
+        res = self._create_network(fmt=self.fmt, name='net',
+                                   admin_state_up=True)
+        network = self.deserialize(self.fmt, res)
+        # Create an IPv6 SLAAC subnet and a port using that subnet
+        subnet = self._make_subnet(self.fmt, network, gateway='fe80::1',
+                                   cidr='fe80::/64', ip_version=6,
+                                   ipv6_ra_mode=constants.IPV6_SLAAC,
+                                   ipv6_address_mode=constants.IPV6_SLAAC)
+        res = self._create_port(self.fmt, net_id=network['network']['id'])
+        port = self.deserialize(self.fmt, res)
+        self.assertEqual(1, len(port['port']['fixed_ips']))
+
+        # The port should have an address from the subnet
+        req = self.new_show_request('ports', port['port']['id'], self.fmt)
+        res = req.get_response(self.api)
+        sport = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual(1, len(sport['port']['fixed_ips']))
+
+        # Delete the subnet
+        req = self.new_delete_request('subnets', subnet['subnet']['id'])
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
+        # The port should no longer have an address from the deleted subnet
+        req = self.new_show_request('ports', port['port']['id'], self.fmt)
+        res = req.get_response(self.api)
+        sport = self.deserialize(self.fmt, req.get_response(self.api))
+        self.assertEqual(0, len(sport['port']['fixed_ips']))
+
     def test_delete_network(self):
         gateway_ip = '10.0.0.1'
         cidr = '10.0.0.0/24'
@@ -2528,10 +2678,14 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
         res = self._create_network(fmt=self.fmt, name='net',
                                    admin_state_up=True)
         network = self.deserialize(self.fmt, res)
-        self._make_subnet(self.fmt, network, gateway_ip, cidr, ip_version=4)
+        subnet = self._make_subnet(self.fmt, network, gateway_ip, cidr,
+                                   ip_version=4)
         req = self.new_delete_request('networks', network['network']['id'])
         res = req.get_response(self.api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
+        req = self.new_show_request('subnets', subnet['subnet']['id'])
+        res = req.get_response(self.api)
+        self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
     def test_create_subnet_bad_tenant(self):
         with self.network() as network:
@@ -2546,7 +2700,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                 set_context=True)
 
     def test_create_subnet_as_admin(self):
-        with self.network(do_delete=False) as network:
+        with self.network() as network:
             self._create_subnet(self.fmt,
                                 network['network']['id'],
                                 '10.0.2.0/24',
@@ -2566,7 +2720,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             self.subnet(cidr='14.129.122.5/22'),
             self.subnet(cidr='15.129.122.5/24'),
             self.subnet(cidr='16.129.122.5/28'),
-            self.subnet(cidr='17.129.122.5/32')
+            self.subnet(cidr='17.129.122.5/32', gateway_ip=None)
         ) as subs:
             # the API should accept and correct these for users
             self.assertEqual(subs[0]['subnet']['cidr'], '10.0.0.0/8')
@@ -2707,15 +2861,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                          allocation_pools)
 
     def test_create_subnet_gw_values(self):
-        # Gateway not in subnet
-        gateway = '100.0.0.1'
         cidr = '10.0.0.0/24'
-        allocation_pools = [{'start': '10.0.0.1',
-                             'end': '10.0.0.254'}]
-        expected = {'gateway_ip': gateway,
-                    'cidr': cidr,
-                    'allocation_pools': allocation_pools}
-        self._test_create_subnet(expected=expected, gateway_ip=gateway)
         # Gateway is last IP in range
         gateway = '10.0.0.254'
         allocation_pools = [{'start': '10.0.0.1',
@@ -2734,8 +2880,39 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
         self._test_create_subnet(expected=expected,
                                  gateway_ip=gateway)
 
-    def test_create_subnet_gw_outside_cidr_force_on_returns_400(self):
-        cfg.CONF.set_override('force_gateway_on_subnet', True)
+    def test_create_subnet_ipv6_gw_values(self):
+        cidr = '2001::/64'
+        # Gateway is last IP in IPv6 DHCPv6 stateful subnet
+        gateway = '2001::ffff:ffff:ffff:fffe'
+        allocation_pools = [{'start': '2001::1',
+                             'end': '2001::ffff:ffff:ffff:fffd'}]
+        expected = {'gateway_ip': gateway,
+                    'cidr': cidr,
+                    'allocation_pools': allocation_pools}
+        self._test_create_subnet(expected=expected, gateway_ip=gateway,
+                                 cidr=cidr, ip_version=6,
+                                 ipv6_ra_mode=constants.DHCPV6_STATEFUL,
+                                 ipv6_address_mode=constants.DHCPV6_STATEFUL)
+        # Gateway is first IP in IPv6 DHCPv6 stateful subnet
+        gateway = '2001::1'
+        allocation_pools = [{'start': '2001::2',
+                             'end': '2001::ffff:ffff:ffff:fffe'}]
+        expected = {'gateway_ip': gateway,
+                    'cidr': cidr,
+                    'allocation_pools': allocation_pools}
+        self._test_create_subnet(expected=expected, gateway_ip=gateway,
+                                 cidr=cidr, ip_version=6,
+                                 ipv6_ra_mode=constants.DHCPV6_STATEFUL,
+                                 ipv6_address_mode=constants.DHCPV6_STATEFUL)
+        # If gateway_ip is not specified, allocate first IP from the subnet
+        expected = {'gateway_ip': gateway,
+                    'cidr': cidr}
+        self._test_create_subnet(expected=expected,
+                                 cidr=cidr, ip_version=6,
+                                 ipv6_ra_mode=constants.IPV6_SLAAC,
+                                 ipv6_address_mode=constants.IPV6_SLAAC)
+
+    def test_create_subnet_gw_outside_cidr_returns_400(self):
         with self.network() as network:
             self._create_subnet(self.fmt,
                                 network['network']['id'],
@@ -2743,8 +2920,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                 webob.exc.HTTPClientError.code,
                                 gateway_ip='100.0.0.1')
 
-    def test_create_subnet_gw_of_network_force_on_returns_400(self):
-        cfg.CONF.set_override('force_gateway_on_subnet', True)
+    def test_create_subnet_gw_of_network_returns_400(self):
         with self.network() as network:
             self._create_subnet(self.fmt,
                                 network['network']['id'],
@@ -2752,8 +2928,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                                 webob.exc.HTTPClientError.code,
                                 gateway_ip='10.0.0.0')
 
-    def test_create_subnet_gw_bcast_force_on_returns_400(self):
-        cfg.CONF.set_override('force_gateway_on_subnet', True)
+    def test_create_subnet_gw_bcast_returns_400(self):
         with self.network() as network:
             self._create_subnet(self.fmt,
                                 network['network']['id'],
@@ -3011,19 +3186,74 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             res = subnet_req.get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPClientError.code)
 
-    def test_create_subnet_ipv6_attributes(self):
-        gateway_ip = 'fe80::1'
-        cidr = 'fe80::/80'
+    def _test_validate_subnet_ipv6_modes(self, cur_subnet=None,
+                                         expect_success=True, **modes):
+        plugin = manager.NeutronManager.get_plugin()
+        ctx = context.get_admin_context(load_admin_roles=False)
+        new_subnet = {'ip_version': 6,
+                      'cidr': 'fe80::/64',
+                      'enable_dhcp': True}
+        for mode, value in modes.items():
+            new_subnet[mode] = value
+        if expect_success:
+            plugin._validate_subnet(ctx, new_subnet, cur_subnet)
+        else:
+            self.assertRaises(n_exc.InvalidInput, plugin._validate_subnet,
+                              ctx, new_subnet, cur_subnet)
 
-        for mode in constants.IPV6_MODES:
-            self._test_create_subnet(gateway_ip=gateway_ip,
-                                     cidr=cidr, ip_version=6,
-                                     ipv6_ra_mode=mode,
-                                     ipv6_address_mode=mode)
+    def test_create_subnet_ipv6_ra_modes(self):
+        # Test all RA modes with no address mode specified
+        for ra_mode in constants.IPV6_MODES:
+            self._test_validate_subnet_ipv6_modes(
+                ipv6_ra_mode=ra_mode)
+
+    def test_create_subnet_ipv6_addr_modes(self):
+        # Test all address modes with no RA mode specified
+        for addr_mode in constants.IPV6_MODES:
+            self._test_validate_subnet_ipv6_modes(
+                ipv6_address_mode=addr_mode)
+
+    def test_create_subnet_ipv6_same_ra_and_addr_modes(self):
+        # Test all ipv6 modes with ra_mode==addr_mode
+        for ipv6_mode in constants.IPV6_MODES:
+            self._test_validate_subnet_ipv6_modes(
+                ipv6_ra_mode=ipv6_mode,
+                ipv6_address_mode=ipv6_mode)
+
+    def test_create_subnet_ipv6_different_ra_and_addr_modes(self):
+        # Test all ipv6 modes with ra_mode!=addr_mode
+        for ra_mode, addr_mode in itertools.permutations(
+                constants.IPV6_MODES, 2):
+            self._test_validate_subnet_ipv6_modes(
+                expect_success=not (ra_mode and addr_mode),
+                ipv6_ra_mode=ra_mode,
+                ipv6_address_mode=addr_mode)
+
+    def test_create_subnet_ipv6_out_of_cidr_global(self):
+        gateway_ip = '2000::1'
+        cidr = '2001::/64'
+
+        with testlib_api.ExpectedException(
+            webob.exc.HTTPClientError) as ctx_manager:
+            self._test_create_subnet(
+                gateway_ip=gateway_ip, cidr=cidr, ip_version=6,
+                ipv6_ra_mode=constants.DHCPV6_STATEFUL,
+                ipv6_address_mode=constants.DHCPV6_STATEFUL)
+        self.assertEqual(ctx_manager.exception.code,
+                         webob.exc.HTTPClientError.code)
+
+    def test_create_subnet_ipv6_out_of_cidr_lla(self):
+        gateway_ip = 'fe80::1'
+        cidr = '2001::/64'
+
+        self._test_create_subnet(
+            gateway_ip=gateway_ip, cidr=cidr, ip_version=6,
+            ipv6_ra_mode=constants.IPV6_SLAAC,
+            ipv6_address_mode=constants.IPV6_SLAAC)
 
     def test_create_subnet_ipv6_attributes_no_dhcp_enabled(self):
         gateway_ip = 'fe80::1'
-        cidr = 'fe80::/80'
+        cidr = 'fe80::/64'
         with testlib_api.ExpectedException(
                 webob.exc.HTTPClientError) as ctx_manager:
             for mode in constants.IPV6_MODES:
@@ -3059,31 +3289,6 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
         self.assertEqual(ctx_manager.exception.code,
                          webob.exc.HTTPClientError.code)
 
-    def test_create_subnet_invalid_ipv6_combination(self):
-        gateway_ip = 'fe80::1'
-        cidr = 'fe80::/80'
-        with testlib_api.ExpectedException(
-            webob.exc.HTTPClientError) as ctx_manager:
-            self._test_create_subnet(gateway_ip=gateway_ip,
-                                     cidr=cidr, ip_version=6,
-                                     ipv6_ra_mode='stateful',
-                                     ipv6_address_mode='stateless')
-        self.assertEqual(ctx_manager.exception.code,
-                         webob.exc.HTTPClientError.code)
-
-    def test_create_subnet_ipv6_single_attribute_set(self):
-        gateway_ip = 'fe80::1'
-        cidr = 'fe80::/80'
-        for mode in constants.IPV6_MODES:
-            self._test_create_subnet(gateway_ip=gateway_ip,
-                                     cidr=cidr, ip_version=6,
-                                     ipv6_ra_mode=None,
-                                     ipv6_address_mode=mode)
-            self._test_create_subnet(gateway_ip=gateway_ip,
-                                     cidr=cidr, ip_version=6,
-                                     ipv6_ra_mode=mode,
-                                     ipv6_address_mode=None)
-
     def test_create_subnet_ipv6_ra_mode_ip_version_4(self):
         cidr = '10.0.2.0/24'
         with testlib_api.ExpectedException(
@@ -3105,7 +3310,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
 
     def test_update_subnet_no_gateway(self):
         with self.subnet() as subnet:
-            data = {'subnet': {'gateway_ip': '11.0.0.1'}}
+            data = {'subnet': {'gateway_ip': '10.0.0.1'}}
             req = self.new_update_request('subnets', data,
                                           subnet['subnet']['id'])
             res = self.deserialize(self.fmt, req.get_response(self.api))
@@ -3119,7 +3324,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
 
     def test_update_subnet(self):
         with self.subnet() as subnet:
-            data = {'subnet': {'gateway_ip': '11.0.0.1'}}
+            data = {'subnet': {'gateway_ip': '10.0.0.1'}}
             req = self.new_update_request('subnets', data,
                                           subnet['subnet']['id'])
             res = self.deserialize(self.fmt, req.get_response(self.api))
@@ -3165,8 +3370,7 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                 self.assertEqual(res.status_int,
                                  webob.exc.HTTPClientError.code)
 
-    def test_update_subnet_gw_outside_cidr_force_on_returns_400(self):
-        cfg.CONF.set_override('force_gateway_on_subnet', True)
+    def test_update_subnet_gw_outside_cidr_returns_400(self):
         with self.network() as network:
             with self.subnet(network=network) as subnet:
                 data = {'subnet': {'gateway_ip': '100.0.0.1'}}
@@ -3264,24 +3468,21 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                 self.assertEqual(res.status_int,
                                  webob.exc.HTTPConflict.code)
 
-    def test_update_subnet_ipv6_attributes(self):
-        with self.subnet(ip_version=6, cidr='fe80::/80',
+    def test_update_subnet_ipv6_attributes_fails(self):
+        with self.subnet(ip_version=6, cidr='fe80::/64',
                          ipv6_ra_mode=constants.IPV6_SLAAC,
                          ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
             data = {'subnet': {'ipv6_ra_mode': constants.DHCPV6_STATEFUL,
                                'ipv6_address_mode': constants.DHCPV6_STATEFUL}}
             req = self.new_update_request('subnets', data,
                                           subnet['subnet']['id'])
-            res = self.deserialize(self.fmt, req.get_response(self.api))
-            self.assertEqual(res['subnet']['ipv6_ra_mode'],
-                             data['subnet']['ipv6_ra_mode'])
-            self.assertEqual(res['subnet']['ipv6_address_mode'],
-                             data['subnet']['ipv6_address_mode'])
+            res = req.get_response(self.api)
+            self.assertEqual(res.status_int,
+                             webob.exc.HTTPClientError.code)
 
-    def test_update_subnet_ipv6_inconsistent_ra_attribute(self):
-        with self.subnet(ip_version=6, cidr='fe80::/80',
-                         ipv6_ra_mode=constants.IPV6_SLAAC,
-                         ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
+    def test_update_subnet_ipv6_ra_mode_fails(self):
+        with self.subnet(ip_version=6, cidr='fe80::/64',
+                         ipv6_ra_mode=constants.IPV6_SLAAC) as subnet:
             data = {'subnet': {'ipv6_ra_mode': constants.DHCPV6_STATEFUL}}
             req = self.new_update_request('subnets', data,
                                           subnet['subnet']['id'])
@@ -3289,9 +3490,8 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             self.assertEqual(res.status_int,
                              webob.exc.HTTPClientError.code)
 
-    def test_update_subnet_ipv6_inconsistent_address_attribute(self):
-        with self.subnet(ip_version=6, cidr='fe80::/80',
-                         ipv6_ra_mode=constants.IPV6_SLAAC,
+    def test_update_subnet_ipv6_address_mode_fails(self):
+        with self.subnet(ip_version=6, cidr='fe80::/64',
                          ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
             data = {'subnet': {'ipv6_address_mode': constants.DHCPV6_STATEFUL}}
             req = self.new_update_request('subnets', data,
@@ -3300,8 +3500,8 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             self.assertEqual(res.status_int,
                              webob.exc.HTTPClientError.code)
 
-    def test_update_subnet_ipv6_inconsistent_enable_dhcp(self):
-        with self.subnet(ip_version=6, cidr='fe80::/80',
+    def test_update_subnet_ipv6_cannot_disable_dhcp(self):
+        with self.subnet(ip_version=6, cidr='fe80::/64',
                          ipv6_ra_mode=constants.IPV6_SLAAC,
                          ipv6_address_mode=constants.IPV6_SLAAC) as subnet:
             data = {'subnet': {'enable_dhcp': False}}
@@ -3327,6 +3527,56 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             with self.subnet(network=network) as subnet:
                 data = {'subnet': {'ipv6_address_mode':
                                    constants.DHCPV6_STATEFUL}}
+                req = self.new_update_request('subnets', data,
+                                              subnet['subnet']['id'])
+                res = req.get_response(self.api)
+                self.assertEqual(res.status_int,
+                                 webob.exc.HTTPClientError.code)
+
+    def test_update_subnet_allocation_pools(self):
+        """Test that we can successfully update with sane params.
+
+        This will create a subnet with specified allocation_pools
+        Then issue an update (PUT) to update these using correct
+        (i.e. non erroneous) params. Finally retrieve the updated
+        subnet and verify.
+        """
+        allocation_pools = [{'start': '192.168.0.2', 'end': '192.168.0.254'}]
+        with self.network() as network:
+            with self.subnet(network=network,
+                             allocation_pools=allocation_pools,
+                             cidr='192.168.0.0/24') as subnet:
+                data = {'subnet': {'allocation_pools': [
+                        {'start': '192.168.0.10', 'end': '192.168.0.20'},
+                        {'start': '192.168.0.30', 'end': '192.168.0.40'}]}}
+                req = self.new_update_request('subnets', data,
+                                              subnet['subnet']['id'])
+                #check res code but then do GET on subnet for verification
+                res = req.get_response(self.api)
+                self.assertEqual(res.status_code, 200)
+                req = self.new_show_request('subnets', subnet['subnet']['id'],
+                                            self.fmt)
+                res = self.deserialize(self.fmt, req.get_response(self.api))
+                self.assertEqual(len(res['subnet']['allocation_pools']), 2)
+                res_vals = res['subnet']['allocation_pools'][0].values() +\
+                    res['subnet']['allocation_pools'][1].values()
+                for pool_val in ['10', '20', '30', '40']:
+                    self.assertTrue('192.168.0.%s' % (pool_val) in res_vals)
+
+    #updating alloc pool to something outside subnet.cidr
+    def test_update_subnet_allocation_pools_invalid_pool_for_cidr(self):
+        """Test update alloc pool to something outside subnet.cidr.
+
+        This makes sure that an erroneous allocation_pool specified
+        in a subnet update (outside subnet cidr) will result in an error.
+        """
+        allocation_pools = [{'start': '192.168.0.2', 'end': '192.168.0.254'}]
+        with self.network() as network:
+            with self.subnet(network=network,
+                             allocation_pools=allocation_pools,
+                             cidr='192.168.0.0/24') as subnet:
+                data = {'subnet': {'allocation_pools': [
+                        {'start': '10.0.0.10', 'end': '10.0.0.20'}]}}
                 req = self.new_update_request('subnets', data,
                                               subnet['subnet']['id'])
                 res = req.get_response(self.api)
@@ -3757,6 +4007,16 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
             'max_subnet_host_routes',
             n_exc.HostRoutesExhausted)
 
+    def test_port_prevents_network_deletion(self):
+        with self.port() as p:
+            self._delete('networks', p['port']['network_id'],
+                         expected_code=webob.exc.HTTPConflict.code)
+
+    def test_port_prevents_subnet_deletion(self):
+        with self.port() as p:
+            self._delete('subnets', p['port']['fixed_ips'][0]['subnet_id'],
+                         expected_code=webob.exc.HTTPConflict.code)
+
 
 class DbModelTestCase(base.BaseTestCase):
     """DB model tests."""
@@ -3795,16 +4055,9 @@ class TestNeutronDbPluginV2(base.BaseTestCase):
                                    '_rebuild_availability_ranges') as rebuild:
 
                 exception = n_exc.IpAddressGenerationFailure(net_id='n')
-                generate.side_effect = exception
-
-                # I want the side_effect to throw an exception once but I
-                # didn't see a way to do this.  So, let it throw twice and
-                # catch the second one.  Check below to ensure that
-                # _try_generate_ip was called twice.
-                try:
-                    db_base_plugin_v2.NeutronDbPluginV2._generate_ip('c', 's')
-                except n_exc.IpAddressGenerationFailure:
-                    pass
+                # fail first call but not second
+                generate.side_effect = [exception, None]
+                db_base_plugin_v2.NeutronDbPluginV2._generate_ip('c', 's')
 
         self.assertEqual(2, generate.call_count)
         rebuild.assert_called_once_with('c', 's')
@@ -3857,7 +4110,7 @@ class TestNeutronDbPluginV2(base.BaseTestCase):
                           ['b', '192.168.1.112', '192.168.1.120']], actual)
 
 
-class NeutronDbPluginV2AsMixinTestCase(base.BaseTestCase):
+class NeutronDbPluginV2AsMixinTestCase(testlib_api.SqlTestCase):
     """Tests for NeutronDbPluginV2 as Mixin.
 
     While NeutronDbPluginV2TestCase checks NeutronDbPlugin and all plugins as
@@ -3876,7 +4129,6 @@ class NeutronDbPluginV2AsMixinTestCase(base.BaseTestCase):
                                      'admin_state_up': True,
                                      'tenant_id': 'test-tenant',
                                      'shared': False}}
-        self.addCleanup(db.clear_db)
 
     def test_create_network_with_default_status(self):
         net = self.plugin.create_network(self.context, self.net_data)
@@ -3891,23 +4143,3 @@ class NeutronDbPluginV2AsMixinTestCase(base.BaseTestCase):
         self.net_data['network']['status'] = 'BUILD'
         net = self.plugin.create_network(self.context, self.net_data)
         self.assertEqual(net['status'], 'BUILD')
-
-
-class TestBasicGetXML(TestBasicGet):
-    fmt = 'xml'
-
-
-class TestNetworksV2XML(TestNetworksV2):
-    fmt = 'xml'
-
-
-class TestPortsV2XML(TestPortsV2):
-    fmt = 'xml'
-
-
-class TestSubnetsV2XML(TestSubnetsV2):
-    fmt = 'xml'
-
-
-class TestV2HTTPResponseXML(TestV2HTTPResponse):
-    fmt = 'xml'

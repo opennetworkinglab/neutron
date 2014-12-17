@@ -15,14 +15,16 @@
 # under the License.
 #
 
-import eventlet
 import time
 
+import eventlet
+eventlet.monkey_patch()
+
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 from neutron.plugins.vmware.api_client import base
 from neutron.plugins.vmware.api_client import eventlet_request
 
-eventlet.monkey_patch()
 LOG = logging.getLogger(__name__)
 
 
@@ -141,12 +143,12 @@ class EventletApiClient(base.ApiClientBase):
         ret = g.join()
         if ret:
             if isinstance(ret, Exception):
-                LOG.error(_('Login error "%s"'), ret)
+                LOG.error(_LE('Login error "%s"'), ret)
                 raise ret
 
             cookie = ret.getheader("Set-Cookie")
             if cookie:
-                LOG.debug(_("Saving new authentication cookie '%s'"), cookie)
+                LOG.debug("Saving new authentication cookie '%s'", cookie)
 
         return cookie
 

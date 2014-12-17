@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Ronak Shah, Nuage Networks, Alcatel-Lucent USA Inc.
 
 
 EXTENDED_ATTRIBUTES_2_0 = {
@@ -23,6 +21,13 @@ EXTENDED_ATTRIBUTES_2_0 = {
             'is_visible': True,
             'default': None,
             'validate': {'type:string_or_none': None}
+        },
+        'nuage_subnet_template': {
+            'allow_post': True,
+            'allow_put': False,
+            'is_visible': True,
+            'default': None,
+            'validate': {'type:uuid_or_none': None}
         },
     },
 }

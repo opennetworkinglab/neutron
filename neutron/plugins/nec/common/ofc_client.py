@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,14 +11,14 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
-import json
 import time
 
+from oslo.serialization import jsonutils
+from oslo.utils import excutils
 import requests
 
-from neutron.openstack.common import excutils
+from neutron.i18n import _LI, _LW
 from neutron.openstack.common import log as logging
 from neutron.plugins.nec.common import config
 from neutron.plugins.nec.common import exceptions as nexc
@@ -77,22 +75,22 @@ class OFCClient(object):
 
     def do_single_request(self, method, action, body=None):
         action = config.OFC.path_prefix + action
-        LOG.debug(_("Client request: %(host)s:%(port)s "
-                    "%(method)s %(action)s [%(body)s]"),
+        LOG.debug("Client request: %(host)s:%(port)s "
+                  "%(method)s %(action)s [%(body)s]",
                   {'host': self.host, 'port': self.port,
                    'method': method, 'action': action, 'body': body})
         if type(body) is dict:
-            body = json.dumps(body)
+            body = jsonutils.dumps(body)
         try:
             res = self._get_response(method, action, body)
             data = res.text
-            LOG.debug(_("OFC returns [%(status)s:%(data)s]"),
+            LOG.debug("OFC returns [%(status)s:%(data)s]",
                       {'status': res.status_code,
                        'data': data})
 
             # Try to decode JSON data if possible.
             try:
-                data = json.loads(data)
+                data = jsonutils.loads(data)
             except (ValueError, TypeError):
                 pass
 
@@ -103,16 +101,16 @@ class OFCClient(object):
                 return data
             elif res.status_code == requests.codes.SERVICE_UNAVAILABLE:
                 retry_after = res.headers.get('retry-after')
-                LOG.warning(_("OFC returns ServiceUnavailable "
-                              "(retry-after=%s)"), retry_after)
+                LOG.warning(_LW("OFC returns ServiceUnavailable "
+                                "(retry-after=%s)"), retry_after)
                 raise nexc.OFCServiceUnavailable(retry_after=retry_after)
             elif res.status_code == requests.codes.NOT_FOUND:
-                LOG.info(_("Specified resource %s does not exist on OFC "),
+                LOG.info(_LI("Specified resource %s does not exist on OFC "),
                          action)
                 raise nexc.OFCResourceNotFound(resource=action)
             else:
-                LOG.warning(_("Operation on OFC failed: "
-                              "status=%(status)s, detail=%(detail)s"),
+                LOG.warning(_LW("Operation on OFC failed: "
+                                "status=%(status)s, detail=%(detail)s"),
                             {'status': res.status_code, 'detail': data})
                 params = {'reason': _("Operation on OFC failed"),
                           'status': res.status_code}
@@ -139,8 +137,8 @@ class OFCClient(object):
                     except (ValueError, TypeError):
                         wait_time = None
                     if i > 1 and wait_time:
-                        LOG.info(_("Waiting for %s seconds due to "
-                                   "OFC Service_Unavailable."), wait_time)
+                        LOG.info(_LI("Waiting for %s seconds due to "
+                                     "OFC Service_Unavailable."), wait_time)
                         time.sleep(wait_time)
                         ctxt.reraise = False
                         continue

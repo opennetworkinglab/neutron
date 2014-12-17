@@ -13,22 +13,21 @@
 #    under the License.
 
 import httplib
-import logging
-import new
 import random
 
 import eventlet
 from eventlet.green import urllib2
 import mock
 
+from neutron.i18n import _LI
+from neutron.openstack.common import log as logging
 from neutron.plugins.vmware.api_client import eventlet_client as client
 from neutron.plugins.vmware.api_client import eventlet_request as request
 from neutron.tests import base
 from neutron.tests.unit import vmware
 
 
-logging.basicConfig(level=logging.DEBUG)
-LOG = logging.getLogger("test_api_request_eventlet")
+LOG = logging.getLogger(__name__)
 
 
 REQUEST_TIMEOUT = 1
@@ -60,7 +59,7 @@ class ApiRequestEventletTest(base.BaseTestCase):
     def test_apirequest_spawn(self):
         def x(id):
             eventlet.greenthread.sleep(random.random())
-            LOG.info('spawned: %d' % id)
+            LOG.info(_LI('spawned: %d'), id)
 
         for i in range(10):
             request.EventletApiRequest._spawn(x, i)
@@ -68,12 +67,12 @@ class ApiRequestEventletTest(base.BaseTestCase):
     def test_apirequest_start(self):
         for i in range(10):
             a = request.EventletApiRequest(
-                self.client, self.url, request_timeout=0.1)
+                self.client, self.url)
             a._handle_request = mock.Mock()
             a.start()
             eventlet.greenthread.sleep(0.1)
-            logging.info('_handle_request called: %s' %
-                         a._handle_request.called)
+            LOG.info(_LI('_handle_request called: %s'),
+                     a._handle_request.called)
         request.EventletApiRequest.joinall()
 
     def test_join_with_handle_request(self):
@@ -106,16 +105,19 @@ class ApiRequestEventletTest(base.BaseTestCase):
         self.assertTrue(self.req._handle_request.called)
 
     def test_run_and_timeout(self):
-        def my_handle_request(self):
-            LOG.info('my_handle_request() self: %s' % self)
-            LOG.info('my_handle_request() dir(self): %s' % dir(self))
+        def my_handle_request():
+            LOG.info('my_handle_request() self: %s' % self.req)
+            LOG.info('my_handle_request() dir(self): %s' % dir(self.req))
             eventlet.greenthread.sleep(REQUEST_TIMEOUT * 2)
 
-        self.req._request_timeout = REQUEST_TIMEOUT
-        self.req._handle_request = new.instancemethod(
-            my_handle_request, self.req, request.EventletApiRequest)
-        self.req.start()
-        self.assertIsNone(self.req.join())
+        with mock.patch.object(
+            self.req,
+            '_handle_request',
+            new=my_handle_request
+        ):
+            self.req._request_timeout = REQUEST_TIMEOUT
+            self.req.start()
+            self.assertIsNone(self.req.join())
 
     def prep_issue_request(self):
         mysock = mock.Mock()

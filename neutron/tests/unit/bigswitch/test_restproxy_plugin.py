@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2012 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -46,8 +45,10 @@ class BigSwitchProxyPluginV2TestCase(test_base.BigSwitchTestBase,
         self.setup_patches()
         if plugin_name:
             self._plugin_name = plugin_name
+        service_plugins = {'L3_ROUTER_NAT': self._l3_plugin_name}
         super(BigSwitchProxyPluginV2TestCase,
-              self).setUp(self._plugin_name)
+              self).setUp(self._plugin_name, service_plugins=service_plugins)
+        self.setup_db()
         self.port_create_status = 'BUILD'
         self.startHttpPatch()
 
@@ -82,14 +83,20 @@ class TestBigSwitchProxyPortsV2(test_plugin.TestPortsV2,
         super(TestBigSwitchProxyPortsV2,
               self).setUp(self._plugin_name)
 
+    def test_get_ports_no_id(self):
+        with self.port(name='test'):
+            ports = manager.NeutronManager.get_plugin().get_ports(
+                context.get_admin_context(), fields=['name'])
+            self.assertEqual(['name'], ports[0].keys())
+
     def test_router_port_status_active(self):
         # router ports screw up port auto-deletion so it has to be
         # disabled for this test
-        with self.network(do_delete=False) as net:
-            with self.subnet(network=net, do_delete=False) as sub:
+        with self.network() as net:
+            with self.subnet(network=net) as sub:
                 with self.port(
                     subnet=sub,
-                    no_delete=True,
+                    do_delete=False,
                     device_owner=constants.DEVICE_OWNER_ROUTER_INTF
                 ) as port:
                     # router ports should be immediately active
@@ -149,9 +156,10 @@ class TestBigSwitchProxyPortsV2(test_plugin.TestPortsV2,
                 # stop normal patch
                 self.httpPatch.stop()
                 with patch(HTTPCON, new=fake_server.HTTPConnectionMock500):
-                    self._delete('ports', port['port']['id'],
-                                 expected_code=
-                                 webob.exc.HTTPInternalServerError.code)
+                    self._delete(
+                        'ports',
+                        port['port']['id'],
+                        expected_code=webob.exc.HTTPInternalServerError.code)
                 self.httpPatch.start()
                 port = self._get_ports(n['network']['id'])[0]
                 self.assertEqual('BUILD', port['status'])
@@ -210,10 +218,13 @@ class TestBigSwitchProxyPortsV2(test_plugin.TestPortsV2,
     def test_port_vif_details_override(self):
         # ivshost is in the test config to override to IVS
         kwargs = {'name': 'name', 'binding:host_id': 'ivshost',
-                  'device_id': 'override_dev'}
+                  'device_id': 'override_dev',
+                  'arg_list': ('binding:host_id',)}
         with self.port(**kwargs) as port:
             self.assertEqual(port['port']['binding:vif_type'],
                              portbindings.VIF_TYPE_IVS)
+        self._delete('ports', port['port']['id'])
+        self._delete('networks', port['port']['network_id'])
         kwargs = {'name': 'name2', 'binding:host_id': 'someotherhost',
                   'device_id': 'other_dev'}
         with self.port(**kwargs) as port:
@@ -229,18 +240,6 @@ class TestBigSwitchProxyPortsV2(test_plugin.TestPortsV2,
             req = self.new_update_request('ports', data, port['port']['id'])
             res = self.deserialize(self.fmt, req.get_response(self.api))
             self.assertEqual(res['port']['binding:vif_type'], self.VIF_TYPE)
-
-    def _make_port(self, fmt, net_id, expected_res_status=None, arg_list=None,
-                   **kwargs):
-        arg_list = arg_list or ()
-        arg_list += ('binding:host_id', )
-        res = self._create_port(fmt, net_id, expected_res_status,
-                                arg_list, **kwargs)
-        # Things can go wrong - raise HTTP exc with res code only
-        # so it can be caught by unit tests
-        if res.status_int >= 400:
-            raise webob.exc.HTTPClientError(code=res.status_int)
-        return self.deserialize(fmt, res)
 
 
 class TestVifDifferentDefault(BigSwitchProxyPluginV2TestCase):
@@ -296,6 +295,20 @@ class TestBigSwitchProxyNetworksV2(test_plugin.TestNetworksV2,
                              self._get_networks(n['network']['tenant_id']
                                                 )[0]['id'])
 
+    def test_notify_on_security_group_change(self):
+        plugin = manager.NeutronManager.get_plugin()
+        with self.port() as p:
+            with contextlib.nested(
+                mock.patch.object(plugin, 'notifier'),
+                mock.patch.object(plugin, 'is_security_group_member_updated',
+                                  return_value=True)
+            ) as (n_mock, s_mock):
+                # any port update should trigger a notification due to s_mock
+                data = {'port': {'name': 'aNewName'}}
+                self.new_update_request(
+                    'ports', data, p['port']['id']).get_response(self.api)
+                self.assertTrue(n_mock.port_update.called)
+
 
 class TestBigSwitchProxySubnetsV2(test_plugin.TestSubnetsV2,
                                   BigSwitchProxyPluginV2TestCase):
@@ -311,6 +324,6 @@ class TestBigSwitchProxySync(BigSwitchProxyPluginV2TestCase):
         self.assertEqual(result[0], 200)
 
 
-class TestBigSwitchAddressPairs(BigSwitchProxyPluginV2TestCase,
-                                test_addr_pair.TestAllowedAddressPairs):
+class TestBigSwitchAddressPairs(test_addr_pair.TestAllowedAddressPairs,
+                                BigSwitchProxyPluginV2TestCase):
     pass

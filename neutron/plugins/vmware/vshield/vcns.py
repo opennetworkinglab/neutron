@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 VMware, Inc
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,10 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: linb, VMware
 
-from neutron.openstack.common import jsonutils
+from oslo.serialization import jsonutils
+
 from neutron.openstack.common import log as logging
 from neutron.plugins.vmware.vshield.common import VcnsApiClient
 
@@ -53,7 +50,7 @@ class Vcns(object):
                                                           password, 'json')
 
     def do_request(self, method, uri, params=None, format='json', **kwargs):
-        LOG.debug(_("VcnsApiHelper('%(method)s', '%(uri)s', '%(body)s')"), {
+        LOG.debug("VcnsApiHelper('%(method)s', '%(uri)s', '%(body)s')", {
                   'method': method,
                   'uri': uri,
                   'body': jsonutils.dumps(params)})
@@ -61,8 +58,8 @@ class Vcns(object):
             header, content = self.jsonapi_client.request(method, uri, params)
         else:
             header, content = self.xmlapi_client.request(method, uri, params)
-        LOG.debug(_("Header: '%s'"), header)
-        LOG.debug(_("Content: '%s'"), content)
+        LOG.debug("Header: '%s'", header)
+        LOG.debug("Content: '%s'", content)
         if content == '':
             return header, {}
         if kwargs.get('decode', True):
@@ -297,7 +294,9 @@ class Vcns(object):
                         is_attachment=False):
         uri_prefix = "%s/%s/%s" % (URI_PREFIX, edge_id, service)
         if resource:
-            res_path = resource + (resource_id and "/%s" % resource_id or '')
+            res_path = resource
+            if resource_id:
+                res_path += "/%s" % resource_id
             uri_path = "%s/%s" % (uri_prefix, res_path)
         else:
             uri_path = uri_prefix

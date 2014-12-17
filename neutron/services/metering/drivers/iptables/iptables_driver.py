@@ -1,7 +1,5 @@
 # Copyright (C) 2013 eNovance SAS <licensing@enovance.com>
 #
-# Author: Sylvain Afchain <sylvain.afchain@enovance.com>
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -15,13 +13,16 @@
 # under the License.
 
 from oslo.config import cfg
+from oslo.utils import importutils
+import six
 
 from neutron.agent.common import config
 from neutron.agent.linux import interface
 from neutron.agent.linux import iptables_manager
 from neutron.common import constants as constants
+from neutron.common import ipv6_utils
 from neutron.common import log
-from neutron.openstack.common import importutils
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
 from neutron.services.metering.drivers import abstract_driver
 
@@ -74,7 +75,8 @@ class RouterWithMetering(object):
         self.iptables_manager = iptables_manager.IptablesManager(
             root_helper=self.root_helper,
             namespace=self.ns_name,
-            binary_name=WRAP_NAME)
+            binary_name=WRAP_NAME,
+            use_ipv6=ipv6_utils.is_enabled())
         self.metering_labels = {}
 
 
@@ -87,7 +89,8 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
 
         if not self.conf.interface_driver:
             raise SystemExit(_('An interface driver must be specified'))
-        LOG.info(_("Loading interface driver %s"), self.conf.interface_driver)
+        LOG.info(_LI("Loading interface driver %s"),
+                 self.conf.interface_driver)
         self.driver = importutils.import_object(self.conf.interface_driver,
                                                 self.conf)
 
@@ -102,10 +105,10 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
     @log.log
     def update_routers(self, context, routers):
         # disassociate removed routers
-        router_ids = [router['id'] for router in routers]
-        for router_id in self.routers:
+        router_ids = set(router['id'] for router in routers)
+        for router_id, rm in six.iteritems(self.routers):
             if router_id not in router_ids:
-                self._process_disassociate_metering_label(router)
+                self._process_disassociate_metering_label(rm.router)
 
         for router in routers:
             old_gw_port_id = None
@@ -141,16 +144,17 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         for rule in rules:
             remote_ip = rule['remote_ip_prefix']
 
-            dir = '-i ' + ext_dev
             if rule['direction'] == 'egress':
-                dir = '-o ' + ext_dev
+                dir_opt = '-o %s -s %s' % (ext_dev, remote_ip)
+            else:
+                dir_opt = '-i %s -d %s' % (ext_dev, remote_ip)
 
             if rule['excluded']:
-                ipt_rule = dir + ' -d ' + remote_ip + ' -j RETURN'
-                im.ipv4['filter'].add_rule(rules_chain, ipt_rule, wrap=False,
-                                           top=True)
+                ipt_rule = '%s -j RETURN' % dir_opt
+                im.ipv4['filter'].add_rule(rules_chain, ipt_rule,
+                                           wrap=False, top=True)
             else:
-                ipt_rule = dir + ' -d ' + remote_ip + ' -j ' + label_chain
+                ipt_rule = '%s -j %s' % (dir_opt, label_chain)
                 im.ipv4['filter'].add_rule(rules_chain, ipt_rule,
                                            wrap=False, top=False)
 

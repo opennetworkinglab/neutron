@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright (c) 2013 OpenStack Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,20 +14,20 @@
 # limitations under the License.
 
 import mock
+from oslo.utils import importutils
 
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.ml2 import config as ml2_config
 from neutron.plugins.ml2.drivers.brocade import (mechanism_brocade
                                                  as brocademechanism)
-from neutron.tests.unit import test_db_plugin
+from neutron.tests.unit.ml2 import test_ml2_plugin
 
 LOG = logging.getLogger(__name__)
 MECHANISM_NAME = ('neutron.plugins.ml2.'
                   'drivers.brocade.mechanism_brocade.BrocadeMechanism')
 
 
-class TestBrocadeMechDriverV2(test_db_plugin.NeutronDbPluginV2TestCase):
+class TestBrocadeMechDriverV2(test_ml2_plugin.Ml2PluginV2TestCase):
     """Test Brocade VCS/VDX mechanism driver.
     """
 
@@ -54,16 +53,64 @@ class TestBrocadeMechDriverV2(test_db_plugin.NeutronDbPluginV2TestCase):
             self.mechanism_driver = importutils.import_object(_mechanism_name)
 
 
-class TestBrocadeMechDriverNetworksV2(test_db_plugin.TestNetworksV2,
+class TestBrocadeMechDriverNetworksV2(test_ml2_plugin.TestMl2NetworksV2,
                                       TestBrocadeMechDriverV2):
     pass
 
 
-class TestBrocadeMechDriverPortsV2(test_db_plugin.TestPortsV2,
+class TestBrocadeMechDriverPortsV2(test_ml2_plugin.TestMl2PortsV2,
                                    TestBrocadeMechDriverV2):
     pass
 
 
-class TestBrocadeMechDriverSubnetsV2(test_db_plugin.TestSubnetsV2,
+class TestBrocadeMechDriverSubnetsV2(test_ml2_plugin.TestMl2SubnetsV2,
                                      TestBrocadeMechDriverV2):
     pass
+
+
+class TestBrocadeMechDriverFeaturesEnabledTestCase(TestBrocadeMechDriverV2):
+
+    def setUp(self):
+        super(TestBrocadeMechDriverFeaturesEnabledTestCase, self).setUp()
+
+    def test_version_features(self):
+
+        vf = True
+        # Test for NOS version 4.0.3
+        self.mechanism_driver.set_features_enabled("4.0.3", vf)
+        # Verify
+        pp_domain_support, virtual_fabric_enabled = (
+            self.mechanism_driver.get_features_enabled()
+        )
+        self.assertFalse(pp_domain_support)
+        self.assertTrue(virtual_fabric_enabled)
+
+        # Test for NOS version 4.1.0
+        vf = True
+        self.mechanism_driver.set_features_enabled("4.1.0", vf)
+        # Verify
+        pp_domain_support, virtual_fabric_enabled = (
+            self.mechanism_driver.get_features_enabled()
+        )
+        self.assertTrue(pp_domain_support)
+        self.assertTrue(virtual_fabric_enabled)
+
+        # Test for NOS version 4.1.3
+        vf = False
+        self.mechanism_driver.set_features_enabled("4.1.3", vf)
+        # Verify
+        pp_domain_support, virtual_fabric_enabled = (
+            self.mechanism_driver.get_features_enabled()
+        )
+        self.assertTrue(pp_domain_support)
+        self.assertFalse(virtual_fabric_enabled)
+
+        # Test for NOS version 5.0.0
+        vf = True
+        self.mechanism_driver.set_features_enabled("5.0.0", vf)
+        # Verify
+        pp_domain_support, virtual_fabric_enabled = (
+            self.mechanism_driver.get_features_enabled()
+        )
+        self.assertTrue(pp_domain_support)
+        self.assertTrue(virtual_fabric_enabled)

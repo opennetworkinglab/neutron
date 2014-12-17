@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mark McClain, DreamHost
 
 import os
 
@@ -135,6 +133,10 @@ def add_command_parsers(subparsers):
         parser.add_argument('--delta', type=int)
         parser.add_argument('--sql', action='store_true')
         parser.add_argument('revision', nargs='?')
+        parser.add_argument('--mysql-engine',
+                            default='',
+                            help='Change MySQL storage engine of current '
+                                 'existing tables')
         parser.set_defaults(func=do_upgrade_downgrade)
 
     parser = subparsers.add_parser('stamp')
@@ -157,15 +159,19 @@ command_opt = cfg.SubCommandOpt('command',
 CONF.register_cli_opt(command_opt)
 
 
-def main():
-    config = alembic_config.Config(
-        os.path.join(os.path.dirname(__file__), 'alembic.ini')
-    )
+def get_alembic_config():
+    config = alembic_config.Config(os.path.join(os.path.dirname(__file__),
+                                                'alembic.ini'))
     config.set_main_option('script_location',
                            'neutron.db.migration:alembic_migrations')
+    return config
+
+
+def main():
+    config = get_alembic_config()
     # attach the Neutron conf to the Alembic conf
     config.neutron_config = CONF
 
-    CONF()
+    CONF(project='neutron')
     #TODO(gongysh) enable logging
     CONF.command.func(config, CONF.command.name)

@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2013 PLUMgrid, Inc. All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Edgar Magana, emagana@plumgrid.com, PLUMgrid, Inc.
 
 """
 Neutron Plug-in for PLUMgrid Virtual Networking Infrastructure (VNI)
@@ -23,6 +20,7 @@ to the PLUMgrid Network Management System called Director
 
 from plumgridlib import plumlib
 
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -35,7 +33,7 @@ class Plumlib(object):
     """
 
     def __init__(self):
-        LOG.info(_('Python PLUMgrid Library Started '))
+        LOG.info(_LI('Python PLUMgrid Library Started '))
 
     def director_conn(self, director_plumgrid, director_port, timeout,
                       director_admin, director_password):
@@ -98,3 +96,21 @@ class Plumlib(object):
 
     def disassociate_floatingips(self, floating_ip, port_id):
         self.plumlib.disassociate_floatingips(floating_ip, port_id)
+
+    def create_security_group(self, sg_db):
+        self.plumlib.create_security_group(sg_db)
+
+    def update_security_group(self, sg_db):
+        self.plumlib.update_security_group(sg_db)
+
+    def delete_security_group(self, sg_db):
+        self.plumlib.delete_security_group(sg_db)
+
+    def create_security_group_rule(self, sg_rule_db):
+        self.plumlib.create_security_group_rule(sg_rule_db)
+
+    def create_security_group_rule_bulk(self, sg_rule_db):
+        self.plumlib.create_security_group_rule_bulk(sg_rule_db)
+
+    def delete_security_group_rule(self, sg_rule_db):
+        self.plumlib.delete_security_group_rule(sg_rule_db)

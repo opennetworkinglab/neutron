@@ -1,4 +1,6 @@
 # Copyright (C) 2014 VA Linux Systems Japan K.K.
+# Copyright (C) 2014 Fumihiko Kakuma <kakuma at valinux co jp>
+# All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -11,7 +13,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Fumihiko Kakuma, VA Linux Systems Japan K.K.
 
 from oslo.config import cfg
 
@@ -23,6 +24,9 @@ agent_opts = [
     cfg.IntOpt('get_datapath_retry_times', default=60,
                help=_("Number of seconds to retry acquiring "
                       "an Open vSwitch datapath")),
+    cfg.ListOpt('physical_interface_mappings',
+                default=[],
+                help=_("List of <physical_network>:<physical_interface>")),
 ]
 
 

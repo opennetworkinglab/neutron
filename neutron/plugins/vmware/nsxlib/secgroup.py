@@ -13,11 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
+from oslo.serialization import jsonutils
+from oslo.utils import excutils
 
 from neutron.common import constants
 from neutron.common import exceptions
-from neutron.openstack.common import excutils
+from neutron.i18n import _LW
 from neutron.openstack.common import log
 from neutron.plugins.vmware.common import utils
 from neutron.plugins.vmware import nsxlib
@@ -38,7 +39,7 @@ def mk_body(**kwargs):
     :param kwargs: the key/value pirs to be dumped into a json string.
     :returns: a json string.
     """
-    return json.dumps(kwargs, ensure_ascii=False)
+    return jsonutils.dumps(kwargs, ensure_ascii=False)
 
 
 def query_security_profiles(cluster, fields=None, filters=None):
@@ -92,7 +93,7 @@ def create_security_profile(cluster, tenant_id, neutron_id, security_profile):
                                                 {'ethertype': 'IPv6'}]}
 
         update_security_group_rules(cluster, rsp['uuid'], rules)
-    LOG.debug(_("Created Security Profile: %s"), rsp)
+    LOG.debug("Created Security Profile: %s", rsp)
     return rsp
 
 
@@ -118,18 +119,16 @@ def update_security_group_rules(cluster, spid, rules):
         LOG.error(nsxlib.format_exception("Unknown", e, locals()))
         #FIXME(salvatore-orlando): This should not raise NeutronException
         raise exceptions.NeutronException()
-    LOG.debug(_("Updated Security Profile: %s"), rsp)
+    LOG.debug("Updated Security Profile: %s", rsp)
     return rsp
 
 
 def update_security_profile(cluster, spid, name):
-    return nsxlib.do_request(HTTP_PUT,
-                             nsxlib._build_uri_path(SECPROF_RESOURCE,
-                                                    resource_id=spid),
-                             json.dumps({
-                             "display_name": utils.check_and_truncate(name)
-                             }),
-                             cluster=cluster)
+    return nsxlib.do_request(
+        HTTP_PUT,
+        nsxlib._build_uri_path(SECPROF_RESOURCE, resource_id=spid),
+        jsonutils.dumps({"display_name": utils.check_and_truncate(name)}),
+        cluster=cluster)
 
 
 def delete_security_profile(cluster, spid):
@@ -140,5 +139,5 @@ def delete_security_profile(cluster, spid):
     except exceptions.NotFound:
         with excutils.save_and_reraise_exception():
             # This is not necessarily an error condition
-            LOG.warn(_("Unable to find security profile %s on NSX backend"),
+            LOG.warn(_LW("Unable to find security profile %s on NSX backend"),
                      spid)

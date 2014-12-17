@@ -22,6 +22,7 @@ import datetime
 import functools
 import hashlib
 import logging as std_logging
+import multiprocessing
 import os
 import random
 import signal
@@ -30,6 +31,7 @@ import uuid
 
 from eventlet.green import subprocess
 from oslo.config import cfg
+from oslo.utils import excutils
 
 from neutron.common import constants as q_const
 from neutron.openstack.common import lockutils
@@ -64,9 +66,9 @@ class cache_method_results(object):
         try:
             item = target_self._cache.get(key, self._not_cached)
         except TypeError:
-            LOG.debug(_("Method %(func_name)s cannot be cached due to "
-                        "unhashable parameters: args: %(args)s, kwargs: "
-                        "%(kwargs)s"),
+            LOG.debug("Method %(func_name)s cannot be cached due to "
+                      "unhashable parameters: args: %(args)s, kwargs: "
+                      "%(kwargs)s",
                       {'func_name': func_name,
                        'args': args,
                        'kwargs': kwargs})
@@ -87,9 +89,9 @@ class cache_method_results(object):
                     'class': target_self.__class__.__name__})
         if not target_self._cache:
             if self._first_call:
-                LOG.debug(_("Instance of class %(module)s.%(class)s doesn't "
-                            "contain attribute _cache therefore results "
-                            "cannot be cached for %(func_name)s."),
+                LOG.debug("Instance of class %(module)s.%(class)s doesn't "
+                          "contain attribute _cache therefore results "
+                          "cannot be cached for %(func_name)s.",
                           {'module': target_self.__module__,
                            'class': target_self.__class__.__name__,
                            'func_name': self.func.__name__})
@@ -113,7 +115,7 @@ def read_cached_file(filename, cache_info, reload_func=None):
     """
     mtime = os.path.getmtime(filename)
     if not cache_info or mtime != cache_info.get('mtime'):
-        LOG.debug(_("Reloading cached file %s"), filename)
+        LOG.debug("Reloading cached file %s", filename)
         with open(filename) as fap:
             cache_info['data'] = fap.read()
         cache_info['mtime'] = mtime
@@ -183,7 +185,7 @@ def subprocess_popen(args, stdin=None, stdout=None, stderr=None, shell=False,
 
 
 def parse_mappings(mapping_list, unique_values=True):
-    """Parse a list of of mapping strings into a dictionary.
+    """Parse a list of mapping strings into a dictionary.
 
     :param mapping_list: a list of strings of the form '<key>:<value>'
     :param unique_values: values must be unique if True
@@ -270,6 +272,23 @@ def is_valid_vlan_tag(vlan):
     return q_const.MIN_VLAN_TAG <= vlan <= q_const.MAX_VLAN_TAG
 
 
+def is_valid_gre_id(gre_id):
+    return q_const.MIN_GRE_ID <= gre_id <= q_const.MAX_GRE_ID
+
+
+def is_valid_vxlan_vni(vni):
+    return q_const.MIN_VXLAN_VNI <= vni <= q_const.MAX_VXLAN_VNI
+
+
+def get_random_mac(base_mac):
+    mac = [int(base_mac[0], 16), int(base_mac[1], 16),
+           int(base_mac[2], 16), random.randint(0x00, 0xff),
+           random.randint(0x00, 0xff), random.randint(0x00, 0xff)]
+    if base_mac[3] != '00':
+        mac[3] = int(base_mac[3], 16)
+    return ':'.join(["%02x" % x for x in mac])
+
+
 def get_random_string(length):
     """Get a random hex string of the specified length.
 
@@ -291,3 +310,50 @@ def get_dhcp_agent_device_id(network_id, host):
     local_hostname = host.split('.')[0]
     host_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, str(local_hostname))
     return 'dhcp%s-%s' % (host_uuid, network_id)
+
+
+def cpu_count():
+    try:
+        return multiprocessing.cpu_count()
+    except NotImplementedError:
+        return 1
+
+
+class exception_logger(object):
+    """Wrap a function and log raised exception
+
+    :param logger: the logger to log the exception default is LOG.exception
+
+    :returns: origin value if no exception raised; re-raise the exception if
+              any occurred
+
+    """
+    def __init__(self, logger=None):
+        self.logger = logger
+
+    def __call__(self, func):
+        if self.logger is None:
+            LOG = logging.getLogger(func.__module__)
+            self.logger = LOG.exception
+
+        def call(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                with excutils.save_and_reraise_exception():
+                    self.logger(e)
+        return call
+
+
+def is_dvr_serviced(device_owner):
+        """Check if the port need to be serviced by DVR
+
+        Helper function to check the device owners of the
+        ports in the compute and service node to make sure
+        if they are required for DVR or any service directly or
+        indirectly associated with DVR.
+        """
+        dvr_serviced_device_owners = (q_const.DEVICE_OWNER_LOADBALANCER,
+                                      q_const.DEVICE_OWNER_DHCP)
+        return (device_owner.startswith('compute:') or
+                device_owner in dvr_serviced_device_owners)

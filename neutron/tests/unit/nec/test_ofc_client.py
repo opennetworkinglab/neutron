@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,13 +11,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Akihiro Motoki
-
-import json
 
 import mock
 from oslo.config import cfg
+from oslo.serialization import jsonutils
 import requests
 
 from neutron.plugins.nec.common import config
@@ -67,7 +62,7 @@ class OFCClientTest(base.BaseTestCase):
                                    headers=headers)
 
     def test_do_request_200_json_value(self):
-        self._test_do_request(200, json.dumps([1, 2, 3]), [1, 2, 3])
+        self._test_do_request(200, jsonutils.dumps([1, 2, 3]), [1, 2, 3])
 
     def test_do_request_200_string(self):
         self._test_do_request(200, 'abcdef', 'abcdef')
@@ -81,7 +76,7 @@ class OFCClientTest(base.BaseTestCase):
 
     def test_do_request_with_path_prefix(self):
         config.CONF.set_override('path_prefix', '/dummy', group='OFC')
-        self._test_do_request(200, json.dumps([1, 2, 3]), [1, 2, 3],
+        self._test_do_request(200, jsonutils.dumps([1, 2, 3]), [1, 2, 3],
                               path_prefix='/dummy')
 
     def test_do_request_returns_404(self):
@@ -103,7 +98,7 @@ class OFCClientTest(base.BaseTestCase):
                               exc_checks)
 
     def test_do_request_error_json_body(self):
-        resbody = json.dumps({'err_code': 40022,
+        resbody = jsonutils.dumps({'err_code': 40022,
                               'err_msg': 'This is an error.'})
         errmsg = _("An OFC exception has occurred: Operation on OFC failed")
         exc_checks = {'status': 400, 'err_code': 40022,

@@ -14,16 +14,17 @@
 #    under the License.
 
 from oslo.config import cfg
+from oslo.db import exception as db_exc
 from six import moves
 import sqlalchemy as sa
-from sqlalchemy.orm import exc as sa_exc
+from sqlalchemy import sql
 
 from neutron.common import exceptions as exc
 from neutron.db import api as db_api
 from neutron.db import model_base
+from neutron.i18n import _LE, _LW
 from neutron.openstack.common import log
 from neutron.plugins.common import constants as p_const
-from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers import type_tunnel
 
 LOG = log.getLogger(__name__)
@@ -45,7 +46,8 @@ class GreAllocation(model_base.BASEV2):
 
     gre_id = sa.Column(sa.Integer, nullable=False, primary_key=True,
                        autoincrement=False)
-    allocated = sa.Column(sa.Boolean, nullable=False, default=False)
+    allocated = sa.Column(sa.Boolean, nullable=False, default=False,
+                          server_default=sql.false())
 
 
 class GreEndpoints(model_base.BASEV2):
@@ -60,83 +62,29 @@ class GreEndpoints(model_base.BASEV2):
 
 class GreTypeDriver(type_tunnel.TunnelTypeDriver):
 
+    def __init__(self):
+        super(GreTypeDriver, self).__init__(GreAllocation)
+
     def get_type(self):
         return p_const.TYPE_GRE
 
     def initialize(self):
-        self.gre_id_ranges = []
-        self._parse_tunnel_ranges(
-            cfg.CONF.ml2_type_gre.tunnel_id_ranges,
-            self.gre_id_ranges,
-            p_const.TYPE_GRE
-        )
-        self._sync_gre_allocations()
+        try:
+            self._initialize(cfg.CONF.ml2_type_gre.tunnel_id_ranges)
+        except exc.NetworkTunnelRangeError:
+            LOG.exception(_LE("Failed to parse tunnel_id_ranges. "
+                              "Service terminated!"))
+            raise SystemExit()
 
-    def reserve_provider_segment(self, session, segment):
-        segmentation_id = segment.get(api.SEGMENTATION_ID)
-        with session.begin(subtransactions=True):
-            try:
-                alloc = (session.query(GreAllocation).
-                         filter_by(gre_id=segmentation_id).
-                         with_lockmode('update').
-                         one())
-                if alloc.allocated:
-                    raise exc.TunnelIdInUse(tunnel_id=segmentation_id)
-                LOG.debug(_("Reserving specific gre tunnel %s from pool"),
-                          segmentation_id)
-                alloc.allocated = True
-            except sa_exc.NoResultFound:
-                LOG.debug(_("Reserving specific gre tunnel %s outside pool"),
-                          segmentation_id)
-                alloc = GreAllocation(gre_id=segmentation_id)
-                alloc.allocated = True
-                session.add(alloc)
-
-    def allocate_tenant_segment(self, session):
-        with session.begin(subtransactions=True):
-            alloc = (session.query(GreAllocation).
-                     filter_by(allocated=False).
-                     with_lockmode('update').
-                     first())
-            if alloc:
-                LOG.debug(_("Allocating gre tunnel id  %(gre_id)s"),
-                          {'gre_id': alloc.gre_id})
-                alloc.allocated = True
-                return {api.NETWORK_TYPE: p_const.TYPE_GRE,
-                        api.PHYSICAL_NETWORK: None,
-                        api.SEGMENTATION_ID: alloc.gre_id}
-
-    def release_segment(self, session, segment):
-        gre_id = segment[api.SEGMENTATION_ID]
-        with session.begin(subtransactions=True):
-            try:
-                alloc = (session.query(GreAllocation).
-                         filter_by(gre_id=gre_id).
-                         with_lockmode('update').
-                         one())
-                alloc.allocated = False
-                for lo, hi in self.gre_id_ranges:
-                    if lo <= gre_id <= hi:
-                        LOG.debug(_("Releasing gre tunnel %s to pool"),
-                                  gre_id)
-                        break
-                else:
-                    session.delete(alloc)
-                    LOG.debug(_("Releasing gre tunnel %s outside pool"),
-                              gre_id)
-            except sa_exc.NoResultFound:
-                LOG.warning(_("gre_id %s not found"), gre_id)
-
-    def _sync_gre_allocations(self):
-        """Synchronize gre_allocations table with configured tunnel ranges."""
+    def sync_allocations(self):
 
         # determine current configured allocatable gres
         gre_ids = set()
-        for gre_id_range in self.gre_id_ranges:
+        for gre_id_range in self.tunnel_ranges:
             tun_min, tun_max = gre_id_range
             if tun_max + 1 - tun_min > 1000000:
-                LOG.error(_("Skipping unreasonable gre ID range "
-                            "%(tun_min)s:%(tun_max)s"),
+                LOG.error(_LE("Skipping unreasonable gre ID range "
+                              "%(tun_min)s:%(tun_max)s"),
                           {'tun_min': tun_min, 'tun_max': tun_max})
             else:
                 gre_ids |= set(moves.xrange(tun_min, tun_max + 1))
@@ -153,8 +101,7 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
                     # it's not allocatable, so check if its allocated
                     if not alloc.allocated:
                         # it's not, so remove it from table
-                        LOG.debug(_("Removing tunnel %s from pool"),
-                                  alloc.gre_id)
+                        LOG.debug("Removing tunnel %s from pool", alloc.gre_id)
                         session.delete(alloc)
 
             # add missing allocatable tunnels to table
@@ -162,13 +109,10 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
                 alloc = GreAllocation(gre_id=gre_id)
                 session.add(alloc)
 
-    def get_gre_allocation(self, session, gre_id):
-        return session.query(GreAllocation).filter_by(gre_id=gre_id).first()
-
     def get_endpoints(self):
         """Get every gre endpoints from database."""
 
-        LOG.debug(_("get_gre_endpoints() called"))
+        LOG.debug("get_gre_endpoints() called")
         session = db_api.get_session()
 
         with session.begin(subtransactions=True):
@@ -177,14 +121,13 @@ class GreTypeDriver(type_tunnel.TunnelTypeDriver):
                     for gre_endpoint in gre_endpoints]
 
     def add_endpoint(self, ip):
-        LOG.debug(_("add_gre_endpoint() called for ip %s"), ip)
+        LOG.debug("add_gre_endpoint() called for ip %s", ip)
         session = db_api.get_session()
-        with session.begin(subtransactions=True):
-            try:
-                gre_endpoint = (session.query(GreEndpoints).
-                                filter_by(ip_address=ip).one())
-                LOG.warning(_("Gre endpoint with ip %s already exists"), ip)
-            except sa_exc.NoResultFound:
-                gre_endpoint = GreEndpoints(ip_address=ip)
-                session.add(gre_endpoint)
-            return gre_endpoint
+        try:
+            gre_endpoint = GreEndpoints(ip_address=ip)
+            gre_endpoint.save(session)
+        except db_exc.DBDuplicateEntry:
+            gre_endpoint = (session.query(GreEndpoints).
+                            filter_by(ip_address=ip).one())
+            LOG.warning(_LW("Gre endpoint with ip %s already exists"), ip)
+        return gre_endpoint

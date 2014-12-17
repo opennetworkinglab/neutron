@@ -103,7 +103,7 @@ class DuplicateSecurityGroupRuleInPost(qexception.InUse):
 
 
 class SecurityGroupRuleExists(qexception.InUse):
-    message = _("Security group rule already exists. Group id is %(id)s.")
+    message = _("Security group rule already exists. Rule id is %(id)s.")
 
 
 class SecurityGroupRuleParameterConflict(qexception.InvalidInput):
@@ -116,7 +116,10 @@ def convert_protocol(value):
     try:
         val = int(value)
         if val >= 0 and val <= 255:
-            return val
+            # Set value of protocol number to string due to bug 1381379,
+            # PostgreSQL fails when it tries to compare integer with string,
+            # that exists in db.
+            return str(value)
         raise SecurityGroupRuleInvalidProtocol(
             protocol=value, values=sg_supported_protocols)
     except (ValueError, TypeError):
@@ -171,7 +174,7 @@ def convert_ip_prefix_to_cidr(ip_prefix):
 
 
 def _validate_name_not_default(data, valid_values=None):
-    if data == "default":
+    if data.lower() == "default":
         raise SecurityGroupDefaultAlreadyExists()
 
 

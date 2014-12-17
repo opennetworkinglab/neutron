@@ -19,6 +19,7 @@ from neutron import context
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.ml2 import config as config
+from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit import test_db_plugin as test_plugin
 
 
@@ -39,7 +40,7 @@ class PortBindingTestCase(test_plugin.NeutronDbPluginV2TestCase):
         super(PortBindingTestCase, self).setUp(PLUGIN_NAME)
         self.port_create_status = 'DOWN'
         self.plugin = manager.NeutronManager.get_plugin()
-        self.plugin.start_rpc_listener()
+        self.plugin.start_rpc_listeners()
 
     def _check_response(self, port, vif_type, has_port_filter, bound, status):
         self.assertEqual(port[portbindings.VIF_TYPE], vif_type)
@@ -55,19 +56,23 @@ class PortBindingTestCase(test_plugin.NeutronDbPluginV2TestCase):
 
     def _test_port_binding(self, host, vif_type, has_port_filter, bound,
                            status=None):
-        host_arg = {portbindings.HOST_ID: host}
+        mac_address = 'aa:aa:aa:aa:aa:aa'
+        host_arg = {portbindings.HOST_ID: host,
+                    'mac_address': mac_address}
         with self.port(name='name', arg_list=(portbindings.HOST_ID,),
                        **host_arg) as port:
             self._check_response(port['port'], vif_type, has_port_filter,
                                  bound, status)
             port_id = port['port']['id']
             neutron_context = context.get_admin_context()
-            details = self.plugin.callbacks.get_device_details(
+            details = self.plugin.endpoints[0].get_device_details(
                 neutron_context, agent_id="theAgentId", device=port_id)
             if bound:
                 self.assertEqual(details['network_type'], 'local')
+                self.assertEqual(mac_address, details['mac_address'])
             else:
                 self.assertNotIn('network_type', details)
+                self.assertNotIn('mac_address', details)
 
     def test_unbound(self):
         self._test_port_binding("",
@@ -93,6 +98,29 @@ class PortBindingTestCase(test_plugin.NeutronDbPluginV2TestCase):
         self._test_port_binding("host-ovs-filter-active",
                                 portbindings.VIF_TYPE_OVS,
                                 True, True, 'ACTIVE')
+
+    def test_update_port_binding_no_binding(self):
+        ctx = context.get_admin_context()
+        with self.port(name='name') as port:
+            # emulating concurrent binding deletion
+            (ctx.session.query(ml2_models.PortBinding).
+             filter_by(port_id=port['port']['id']).delete())
+            self.assertIsNone(
+                self.plugin.get_bound_port_context(ctx, port['port']['id']))
+
+    def test_commit_dvr_port_binding(self):
+        ctx = context.get_admin_context()
+
+        class MechContext(object):
+            pass
+
+        mctx = MechContext()
+        mctx._binding = None
+        # making a shortcut: calling private method directly to
+        # avoid bothering with "concurrent" port binding deletion
+        res = self.plugin._commit_dvr_port_binding(ctx, 'anyUUID',
+                                                   'HostA', mctx)
+        self.assertIsNone(res)
 
     def _test_update_port_binding(self, host, new_host=None):
         with mock.patch.object(self.plugin,

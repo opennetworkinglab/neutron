@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -15,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import contextlib
 import copy
 import sys
 import uuid
@@ -22,15 +21,17 @@ import uuid
 import eventlet
 import mock
 from oslo.config import cfg
+from oslo import messaging
 import testtools
 
 from neutron.agent.common import config
 from neutron.agent import dhcp_agent
 from neutron.agent.linux import dhcp
 from neutron.agent.linux import interface
+from neutron.common import config as common_config
 from neutron.common import constants as const
 from neutron.common import exceptions
-from neutron.openstack.common.rpc import common
+from neutron import context
 from neutron.tests import base
 
 
@@ -65,6 +66,12 @@ fake_subnet3 = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
                               network_id='12345678-1234-5678-1234567890ab',
                               cidr='192.168.1.1/24', enable_dhcp=True))
 
+fake_ipv6_subnet = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
+                              network_id='12345678-1234-5678-1234567890ab',
+                              cidr='2001:0db8::1:0:0:1/128', enable_dhcp=True,
+                              tenant_id=fake_tenant_id,
+                              gateway_ip='2001:0db8::1:0:0:1', ip_version=6))
+
 fake_meta_subnet = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
                                   network_id='12345678-1234-5678-1234567890ab',
                                   cidr='169.254.169.252/30',
@@ -73,6 +80,8 @@ fake_meta_subnet = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
 
 fake_fixed_ip1 = dhcp.DictModel(dict(id='', subnet_id=fake_subnet1.id,
                                 ip_address='172.9.9.9'))
+fake_fixed_ip2 = dhcp.DictModel(dict(id='', subnet_id=fake_subnet1.id,
+                                ip_address='172.9.9.10'))
 fake_meta_fixed_ip = dhcp.DictModel(dict(id='', subnet=fake_meta_subnet,
                                     ip_address='169.254.169.254'))
 fake_allocation_pool_subnet1 = dhcp.DictModel(dict(id='', start='172.9.9.2',
@@ -80,20 +89,29 @@ fake_allocation_pool_subnet1 = dhcp.DictModel(dict(id='', start='172.9.9.2',
 
 fake_port1 = dhcp.DictModel(dict(id='12345678-1234-aaaa-1234567890ab',
                             device_id='dhcp-12345678-1234-aaaa-1234567890ab',
+                            device_owner='',
                             allocation_pools=fake_subnet1_allocation_pools,
                             mac_address='aa:bb:cc:dd:ee:ff',
                             network_id='12345678-1234-5678-1234567890ab',
                             fixed_ips=[fake_fixed_ip1]))
 
 fake_port2 = dhcp.DictModel(dict(id='12345678-1234-aaaa-123456789000',
+                            device_owner='',
                             mac_address='aa:bb:cc:dd:ee:99',
                             network_id='12345678-1234-5678-1234567890ab',
-                            fixed_ips=[]))
+                            fixed_ips=[fake_fixed_ip2]))
 
 fake_meta_port = dhcp.DictModel(dict(id='12345678-1234-aaaa-1234567890ab',
                                 mac_address='aa:bb:cc:dd:ee:ff',
                                 network_id='12345678-1234-5678-1234567890ab',
                                 device_owner=const.DEVICE_OWNER_ROUTER_INTF,
+                                device_id='forzanapoli',
+                                fixed_ips=[fake_meta_fixed_ip]))
+
+fake_dist_port = dhcp.DictModel(dict(id='12345678-1234-aaaa-1234567890ab',
+                                mac_address='aa:bb:cc:dd:ee:ff',
+                                network_id='12345678-1234-5678-1234567890ab',
+                                device_owner=const.DEVICE_OWNER_DVR_INTERFACE,
                                 device_id='forzanapoli',
                                 fixed_ips=[fake_meta_fixed_ip]))
 
@@ -103,12 +121,56 @@ fake_network = dhcp.NetModel(True, dict(id='12345678-1234-5678-1234567890ab',
                              subnets=[fake_subnet1, fake_subnet2],
                              ports=[fake_port1]))
 
+fake_network_ipv6 = dhcp.NetModel(True, dict(
+                             id='12345678-1234-5678-1234567890ab',
+                             tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                             admin_state_up=True,
+                             subnets=[fake_ipv6_subnet]))
+
+fake_network_ipv6_ipv4 = dhcp.NetModel(True, dict(
+                             id='12345678-1234-5678-1234567890ab',
+                             tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                             admin_state_up=True,
+                             subnets=[fake_ipv6_subnet, fake_subnet1],
+                             ports=[fake_port1]))
+
+isolated_network = dhcp.NetModel(
+    True, dict(
+        id='12345678-1234-5678-1234567890ab',
+        tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        admin_state_up=True,
+        subnets=[fake_subnet1],
+        ports=[fake_port1]))
+
+nonisolated_dist_network = dhcp.NetModel(
+    True, dict(
+        id='12345678-1234-5678-1234567890ab',
+        tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        admin_state_up=True,
+        subnets=[fake_subnet1],
+        ports=[fake_port1, fake_port2]))
+
+empty_network = dhcp.NetModel(
+    True, dict(
+        id='12345678-1234-5678-1234567890ab',
+        tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        admin_state_up=True,
+        subnets=[fake_subnet1],
+        ports=[]))
+
 fake_meta_network = dhcp.NetModel(
     True, dict(id='12345678-1234-5678-1234567890ab',
                tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
                admin_state_up=True,
                subnets=[fake_meta_subnet],
                ports=[fake_meta_port]))
+
+fake_dist_network = dhcp.NetModel(
+    True, dict(id='12345678-1234-5678-1234567890ab',
+               tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+               admin_state_up=True,
+               subnets=[fake_meta_subnet],
+               ports=[fake_meta_port, fake_dist_port]))
 
 fake_down_network = dhcp.NetModel(
     True, dict(id='12345678-dddd-dddd-1234567890ab',
@@ -157,7 +219,7 @@ class TestDhcpAgent(base.BaseTestCase):
                         config.register_root_helper(cfg.CONF)
                         cfg.CONF.register_opts(dhcp.OPTS)
                         cfg.CONF.register_opts(interface.OPTS)
-                        cfg.CONF(project='neutron')
+                        common_config.init(sys.argv[1:])
                         agent_mgr = dhcp_agent.DhcpAgentWithStateReport(
                             'testhost')
                         eventlet.greenthread.sleep(1)
@@ -227,7 +289,7 @@ class TestDhcpAgent(base.BaseTestCase):
 
     def test_call_driver_remote_error_net_not_found(self):
         self._test_call_driver_failure(
-            exc=common.RemoteError(exc_type='NetworkNotFound'),
+            exc=messaging.RemoteError(exc_type='NetworkNotFound'),
             trace_level='warning')
 
     def test_call_driver_network_not_found(self):
@@ -316,12 +378,12 @@ class TestDhcpAgent(base.BaseTestCase):
     def test_periodoc_resync_helper(self):
         with mock.patch.object(dhcp_agent.eventlet, 'sleep') as sleep:
             dhcp = dhcp_agent.DhcpAgent(HOSTNAME)
-            dhcp.needs_resync_reasons = ['reason1', 'reason2']
+            dhcp.needs_resync_reasons = {'a': 'reason1', 'b': 'reason2'}
             with mock.patch.object(dhcp, 'sync_state') as sync_state:
                 sync_state.side_effect = RuntimeError
                 with testtools.ExpectedException(RuntimeError):
                     dhcp._periodic_resync_helper()
-                sync_state.assert_called_once_with()
+                sync_state.assert_called_once_with(['a', 'b'])
                 sleep.assert_called_once_with(dhcp.conf.resync_interval)
                 self.assertEqual(len(dhcp.needs_resync_reasons), 0)
 
@@ -486,16 +548,17 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
         )
         self.external_process = self.external_process_p.start()
 
-    def _enable_dhcp_helper(self, isolated_metadata=False):
-        if isolated_metadata:
+    def _enable_dhcp_helper(self, network, enable_isolated_metadata=False,
+                            is_isolated_network=False):
+        if enable_isolated_metadata:
             cfg.CONF.set_override('enable_isolated_metadata', True)
-        self.plugin.get_network_info.return_value = fake_network
-        self.dhcp.enable_dhcp_helper(fake_network.id)
+        self.plugin.get_network_info.return_value = network
+        self.dhcp.enable_dhcp_helper(network.id)
         self.plugin.assert_has_calls(
-            [mock.call.get_network_info(fake_network.id)])
-        self.call_driver.assert_called_once_with('enable', fake_network)
-        self.cache.assert_has_calls([mock.call.put(fake_network)])
-        if isolated_metadata:
+            [mock.call.get_network_info(network.id)])
+        self.call_driver.assert_called_once_with('enable', network)
+        self.cache.assert_has_calls([mock.call.put(network)])
+        if is_isolated_network:
             self.external_process.assert_has_calls([
                 mock.call(
                     cfg.CONF,
@@ -507,11 +570,71 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
         else:
             self.assertFalse(self.external_process.call_count)
 
-    def test_enable_dhcp_helper_enable_isolated_metadata(self):
-        self._enable_dhcp_helper(isolated_metadata=True)
+    def test_enable_dhcp_helper_enable_metadata_isolated_network(self):
+        self._enable_dhcp_helper(isolated_network,
+                                 enable_isolated_metadata=True,
+                                 is_isolated_network=True)
+
+    def test_enable_dhcp_helper_enable_metadata_no_gateway(self):
+        isolated_network_no_gateway = copy.deepcopy(isolated_network)
+        isolated_network_no_gateway.subnets[0].gateway_ip = None
+
+        self._enable_dhcp_helper(isolated_network_no_gateway,
+                                 enable_isolated_metadata=True,
+                                 is_isolated_network=True)
+
+    def test_enable_dhcp_helper_enable_metadata_nonisolated_network(self):
+        nonisolated_network = copy.deepcopy(isolated_network)
+        nonisolated_network.ports[0].device_owner = (
+            const.DEVICE_OWNER_ROUTER_INTF)
+        nonisolated_network.ports[0].fixed_ips[0].ip_address = '172.9.9.1'
+
+        self._enable_dhcp_helper(nonisolated_network,
+                                 enable_isolated_metadata=True,
+                                 is_isolated_network=False)
+
+    def test_enable_dhcp_helper_enable_metadata_nonisolated_dist_network(self):
+        nonisolated_dist_network.ports[0].device_owner = (
+            const.DEVICE_OWNER_ROUTER_INTF)
+        nonisolated_dist_network.ports[0].fixed_ips[0].ip_address = '172.9.9.1'
+        nonisolated_dist_network.ports[1].device_owner = (
+            const.DEVICE_OWNER_DVR_INTERFACE)
+        nonisolated_dist_network.ports[1].fixed_ips[0].ip_address = '172.9.9.1'
+
+        self._enable_dhcp_helper(nonisolated_dist_network,
+                                 enable_isolated_metadata=True,
+                                 is_isolated_network=False)
+
+    def test_enable_dhcp_helper_enable_metadata_empty_network(self):
+        self._enable_dhcp_helper(empty_network,
+                                 enable_isolated_metadata=True,
+                                 is_isolated_network=True)
+
+    def test_enable_dhcp_helper_enable_metadata_ipv6_ipv4_network(self):
+        self._enable_dhcp_helper(fake_network_ipv6_ipv4,
+                                 enable_isolated_metadata=True,
+                                 is_isolated_network=True)
+
+    def test_enable_dhcp_helper_driver_failure_ipv6_ipv4_network(self):
+        self.plugin.get_network_info.return_value = fake_network_ipv6_ipv4
+        self.call_driver.return_value = False
+        cfg.CONF.set_override('enable_isolated_metadata', True)
+        with mock.patch.object(
+            self.dhcp, 'enable_isolated_metadata_proxy') as enable_metadata:
+            self.dhcp.enable_dhcp_helper(fake_network_ipv6_ipv4.id)
+            self.plugin.assert_has_calls(
+                [mock.call.get_network_info(fake_network_ipv6_ipv4.id)])
+            self.call_driver.assert_called_once_with('enable',
+                                                     fake_network_ipv6_ipv4)
+            self.assertFalse(self.cache.called)
+            self.assertFalse(enable_metadata.called)
+            self.assertFalse(self.external_process.called)
 
     def test_enable_dhcp_helper(self):
-        self._enable_dhcp_helper()
+        self._enable_dhcp_helper(fake_network)
+
+    def test_enable_dhcp_helper_ipv6_network(self):
+        self._enable_dhcp_helper(fake_network_ipv6)
 
     def test_enable_dhcp_helper_down_network(self):
         self.plugin.get_network_info.return_value = fake_down_network
@@ -643,16 +766,17 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                 mock.call().disable()
             ])
 
-    def test_enable_isolated_metadata_proxy_with_metadata_network(self):
+    def _test_metadata_network(self, network):
         cfg.CONF.set_override('enable_metadata_network', True)
         cfg.CONF.set_override('debug', True)
+        cfg.CONF.set_override('verbose', False)
         cfg.CONF.set_override('log_file', 'test.log')
         class_path = 'neutron.agent.linux.ip_lib.IPWrapper'
         self.external_process_p.stop()
         # Ensure the mock is restored if this test fail
         try:
             with mock.patch(class_path) as ip_wrapper:
-                self.dhcp.enable_isolated_metadata_proxy(fake_meta_network)
+                self.dhcp.enable_isolated_metadata_proxy(network)
                 ip_wrapper.assert_has_calls([mock.call(
                     'sudo',
                     'qdhcp-12345678-1234-5678-1234567890ab'),
@@ -665,36 +789,42 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                         mock.ANY,
                         '--debug',
                         ('--log-file=neutron-ns-metadata-proxy-%s.log' %
-                         fake_meta_network.id)])
+                         network.id)], addl_env=None)
                 ])
         finally:
             self.external_process_p.start()
+
+    def test_enable_isolated_metadata_proxy_with_metadata_network(self):
+        self._test_metadata_network(fake_meta_network)
+
+    def test_enable_isolated_metadata_proxy_with_dist_network(self):
+        self._test_metadata_network(fake_dist_network)
 
     def test_network_create_end(self):
         payload = dict(network=dict(id=fake_network.id))
 
         with mock.patch.object(self.dhcp, 'enable_dhcp_helper') as enable:
             self.dhcp.network_create_end(None, payload)
-            enable.assertCalledOnceWith(fake_network.id)
+            enable.assert_called_once_with(fake_network.id)
 
     def test_network_update_end_admin_state_up(self):
         payload = dict(network=dict(id=fake_network.id, admin_state_up=True))
         with mock.patch.object(self.dhcp, 'enable_dhcp_helper') as enable:
             self.dhcp.network_update_end(None, payload)
-            enable.assertCalledOnceWith(fake_network.id)
+            enable.assert_called_once_with(fake_network.id)
 
     def test_network_update_end_admin_state_down(self):
         payload = dict(network=dict(id=fake_network.id, admin_state_up=False))
         with mock.patch.object(self.dhcp, 'disable_dhcp_helper') as disable:
             self.dhcp.network_update_end(None, payload)
-            disable.assertCalledOnceWith(fake_network.id)
+            disable.assert_called_once_with(fake_network.id)
 
     def test_network_delete_end(self):
         payload = dict(network_id=fake_network.id)
 
         with mock.patch.object(self.dhcp, 'disable_dhcp_helper') as disable:
             self.dhcp.network_delete_end(None, payload)
-            disable.assertCalledOnceWith(fake_network.id)
+            disable.assert_called_once_with(fake_network.id)
 
     def test_refresh_dhcp_helper_no_dhcp_enabled_networks(self):
         network = dhcp.NetModel(True, dict(id='net-id',
@@ -781,7 +911,7 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                                                  fake_network)
 
     def test_port_update_end(self):
-        payload = dict(port=vars(fake_port2))
+        payload = dict(port=fake_port2)
         self.cache.get_network_by_id.return_value = fake_network
         self.cache.get_port_by_id.return_value = fake_port2
         self.dhcp.port_update_end(None, payload)
@@ -792,7 +922,7 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
                                                  fake_network)
 
     def test_port_update_change_ip_on_port(self):
-        payload = dict(port=vars(fake_port1))
+        payload = dict(port=fake_port1)
         self.cache.get_network_by_id.return_value = fake_network
         updated_fake_port1 = copy.deepcopy(fake_port1)
         updated_fake_port1.fixed_ips[0].ip_address = '172.9.9.99'
@@ -828,101 +958,57 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
 
 
 class TestDhcpPluginApiProxy(base.BaseTestCase):
-    def setUp(self):
-        super(TestDhcpPluginApiProxy, self).setUp()
-        self.proxy = dhcp_agent.DhcpPluginApi('foo', {}, None)
-        self.proxy.host = 'foo'
+    def _test_dhcp_api(self, method, **kwargs):
+        ctxt = context.get_admin_context()
+        proxy = dhcp_agent.DhcpPluginApi('foo', ctxt, None)
+        proxy.host = 'foo'
 
-        self.call_p = mock.patch.object(self.proxy, 'call')
-        self.call = self.call_p.start()
-        self.make_msg_p = mock.patch.object(self.proxy, 'make_msg')
-        self.make_msg = self.make_msg_p.start()
+        with contextlib.nested(
+            mock.patch.object(proxy.client, 'call'),
+            mock.patch.object(proxy.client, 'prepare'),
+        ) as (
+            rpc_mock, prepare_mock
+        ):
+            prepare_mock.return_value = proxy.client
+            rpc_mock.return_value = kwargs.pop('return_value', [])
 
-    def test_get_network_info(self):
-        self.call.return_value = dict(a=1)
-        retval = self.proxy.get_network_info('netid')
-        self.assertEqual(retval.a, 1)
-        self.assertTrue(self.call.called)
-        self.make_msg.assert_called_once_with('get_network_info',
-                                              network_id='netid',
-                                              host='foo')
+            prepare_args = {}
+            if 'version' in kwargs:
+                prepare_args['version'] = kwargs.pop('version')
 
-    def test_get_dhcp_port(self):
-        self.call.return_value = dict(a=1)
-        retval = self.proxy.get_dhcp_port('netid', 'devid')
-        self.assertEqual(retval.a, 1)
-        self.assertTrue(self.call.called)
-        self.make_msg.assert_called_once_with('get_dhcp_port',
-                                              network_id='netid',
-                                              device_id='devid',
-                                              host='foo')
+            retval = getattr(proxy, method)(**kwargs)
+            self.assertEqual(retval, rpc_mock.return_value)
 
-    def test_get_dhcp_port_none(self):
-        self.call.return_value = None
-        self.assertIsNone(self.proxy.get_dhcp_port('netid', 'devid'))
+            prepare_mock.assert_called_once_with(**prepare_args)
+            kwargs['host'] = proxy.host
+            rpc_mock.assert_called_once_with(ctxt, method, **kwargs)
 
     def test_get_active_networks_info(self):
-        self.proxy.get_active_networks_info()
-        self.make_msg.assert_called_once_with('get_active_networks_info',
-                                              host='foo')
+        self._test_dhcp_api('get_active_networks_info', version='1.1')
+
+    def test_get_network_info(self):
+        self._test_dhcp_api('get_network_info', network_id='fake_id',
+                            return_value=None)
+
+    def test_get_dhcp_port(self):
+        self._test_dhcp_api('get_dhcp_port', network_id='fake_id',
+                            device_id='fake_id_2', return_value=None)
 
     def test_create_dhcp_port(self):
-        port_body = (
-            {'port':
-                {'name': '', 'admin_state_up': True,
-                 'network_id': fake_network.id,
-                 'tenant_id': fake_network.tenant_id,
-                 'fixed_ips': [{'subnet_id': fake_fixed_ip1.subnet_id}],
-                 'device_id': mock.ANY}})
-
-        self.proxy.create_dhcp_port(port_body)
-        self.make_msg.assert_called_once_with('create_dhcp_port',
-                                              port=port_body,
-                                              host='foo')
-
-    def test_create_dhcp_port_none(self):
-        self.call.return_value = None
-        port_body = (
-            {'port':
-                {'name': '', 'admin_state_up': True,
-                 'network_id': fake_network.id,
-                 'tenant_id': fake_network.tenant_id,
-                 'fixed_ips': [{'subnet_id': fake_fixed_ip1.subnet_id}],
-                 'device_id': mock.ANY}})
-        self.assertIsNone(self.proxy.create_dhcp_port(port_body))
-
-    def test_update_dhcp_port_none(self):
-        self.call.return_value = None
-        port_body = {'port': {'fixed_ips':
-                              [{'subnet_id': fake_fixed_ip1.subnet_id}]}}
-        self.assertIsNone(self.proxy.update_dhcp_port(fake_port1.id,
-                                                      port_body))
+        self._test_dhcp_api('create_dhcp_port', port='fake_port',
+                            return_value=None, version='1.1')
 
     def test_update_dhcp_port(self):
-        port_body = {'port': {'fixed_ips':
-                              [{'subnet_id': fake_fixed_ip1.subnet_id}]}}
-        self.proxy.update_dhcp_port(fake_port1.id, port_body)
-        self.make_msg.assert_called_once_with('update_dhcp_port',
-                                              port_id=fake_port1.id,
-                                              port=port_body,
-                                              host='foo')
+        self._test_dhcp_api('update_dhcp_port', port_id='fake_id',
+                            port='fake_port', return_value=None, version='1.1')
 
     def test_release_dhcp_port(self):
-        self.proxy.release_dhcp_port('netid', 'devid')
-        self.assertTrue(self.call.called)
-        self.make_msg.assert_called_once_with('release_dhcp_port',
-                                              network_id='netid',
-                                              device_id='devid',
-                                              host='foo')
+        self._test_dhcp_api('release_dhcp_port', network_id='fake_id',
+                            device_id='fake_id_2')
 
     def test_release_port_fixed_ip(self):
-        self.proxy.release_port_fixed_ip('netid', 'devid', 'subid')
-        self.assertTrue(self.call.called)
-        self.make_msg.assert_called_once_with('release_port_fixed_ip',
-                                              network_id='netid',
-                                              subnet_id='subid',
-                                              device_id='devid',
-                                              host='foo')
+        self._test_dhcp_api('release_port_fixed_ip', network_id='fake_id',
+                            device_id='fake_id_2', subnet_id='fake_id_3')
 
 
 class TestNetworkCache(base.BaseTestCase):

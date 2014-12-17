@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 OpenStack Foundation
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -27,21 +25,6 @@ Create Date: 2013-11-27 18:35:28.148680
 revision = '1fcfc149aca4'
 down_revision = 'e197124d4b9'
 
-migration_for_plugins = [
-    'neutron.plugins.brocade.NeutronPlugin.BrocadePluginV2',
-    'neutron.plugins.openvswitch.ovs_neutron_plugin.OVSNeutronPluginV2',
-    'neutron.plugins.linuxbridge.lb_neutron_plugin.LinuxBridgePluginV2',
-    'neutron.plugins.nec.nec_plugin.NECPluginV2',
-    'neutron.plugins.nicira.NeutronPlugin.NvpPluginV2',
-    'neutron.plugins.nicira.NeutronServicePlugin.NvpAdvancedPlugin',
-    'neutron.plugins.vmware.plugin.NsxPlugin',
-    'neutron.plugins.vmware.plugin.NsxServicePlugin',
-    'neutron.services.loadbalancer.plugin.LoadBalancerPlugin',
-    'neutron.plugins.ibm.sdnve_neutron_plugin.SdnvePluginV2',
-    'neutron.plugins.oneconvergence.plugin.OneConvergencePluginV2',
-    'neutron.plugins.mlnx.mlnx_plugin.MellanoxEswitchPlugin',
-]
-
 from alembic import op
 
 from neutron.db import migration
@@ -51,8 +34,11 @@ TABLE_NAME = 'agents'
 UC_NAME = 'uniq_agents0agent_type0host'
 
 
-def upgrade(active_plugins=None, options=None):
-    if not migration.should_run(active_plugins, migration_for_plugins):
+def upgrade():
+
+    if not migration.schema_has_table(TABLE_NAME):
+        # Assume that, in the database we are migrating from, the
+        # configured plugin did not create the agents table.
         return
 
     op.create_unique_constraint(
@@ -62,12 +48,5 @@ def upgrade(active_plugins=None, options=None):
     )
 
 
-def downgrade(active_plugins=None, options=None):
-    if not migration.should_run(active_plugins, migration_for_plugins):
-        return
-
-    op.drop_constraint(
-        name=UC_NAME,
-        table_name=TABLE_NAME,
-        type_='unique'
-    )
+def downgrade():
+    pass

@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Kedar Kulkarni, One Convergence, Inc.
 
 import contextlib
 import time
@@ -36,8 +34,6 @@ class TestOneConvergenceAgentBase(base.BaseTestCase):
         cfg.CONF.set_default('firewall_driver',
                              'neutron.agent.firewall.NoopFirewallDriver',
                              group='SECURITYGROUP')
-        cfg.CONF.set_override('rpc_backend',
-                              'neutron.openstack.common.rpc.impl_fake')
         with contextlib.nested(
             mock.patch('neutron.openstack.common.loopingcall.'
                        'FixedIntervalLoopingCall'),
@@ -161,18 +157,16 @@ class TestOneConvergenceAgentMain(base.BaseTestCase):
     def test_main(self):
         with contextlib.nested(
             mock.patch.object(nvsd_neutron_agent, 'NVSDNeutronAgent'),
-            mock.patch('eventlet.monkey_patch'),
-            mock.patch.object(nvsd_neutron_agent, 'logging_config'),
+            mock.patch.object(nvsd_neutron_agent, 'common_config'),
             mock.patch.object(nvsd_neutron_agent, 'config')
-        ) as (agent, eventlet, logging_config, config):
+        ) as (agent, common_config, config):
             config.AGENT.integration_bridge = 'br-int-dummy'
             config.AGENT.root_helper = 'root-helper'
             config.AGENT.polling_interval = 5
 
             nvsd_neutron_agent.main()
 
-            self.assertTrue(eventlet.called)
-            self.assertTrue(logging_config.setup_logging.called)
+            self.assertTrue(common_config.setup_logging.called)
             agent.assert_has_calls([
                 mock.call('br-int-dummy', 'root-helper', 5),
                 mock.call().daemon_loop()

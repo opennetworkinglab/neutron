@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 NEC Corporation
 # All rights reserved.
 #
@@ -14,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Akihiro Motoki, NEC Corporation
 
 from oslo.config import cfg
 from testtools import matchers
@@ -32,7 +28,8 @@ from neutron.tests.unit import test_security_groups_rpc as test_sg_rpc
 class TestNecPortBinding(test_bindings.PortBindingsTestCase,
                          test_nec_plugin.NecPluginV2TestCase):
     VIF_TYPE = portbindings.VIF_TYPE_OVS
-    HAS_PORT_FILTER = True
+    VIF_DETAILS = {portbindings.CAP_PORT_FILTER: True,
+                   portbindings.OVS_HYBRID_PLUG: True}
     ENABLE_SG = True
     FIREWALL_DRIVER = test_sg_rpc.FIREWALL_HYBRID_DRIVER
 
@@ -45,7 +42,8 @@ class TestNecPortBinding(test_bindings.PortBindingsTestCase,
 
 
 class TestNecPortBindingNoSG(TestNecPortBinding):
-    HAS_PORT_FILTER = False
+    VIF_DETAILS = {portbindings.CAP_PORT_FILTER: False,
+                   portbindings.OVS_HYBRID_PLUG: False}
     ENABLE_SG = False
     FIREWALL_DRIVER = test_sg_rpc.FIREWALL_NOOP_DRIVER
 
@@ -105,7 +103,7 @@ class TestNecPortBindingPortInfo(test_nec_plugin.NecPluginV2TestCase):
             # port-update with non admin user should fail
             self._update('ports', port_id,
                          {'port': profile_arg},
-                         expected_code=404,
+                         expected_code=exc.HTTPForbidden.code,
                          neutron_context=ctx)
 
     def test_port_update_portinfo(self):
@@ -257,14 +255,11 @@ class TestNecPortBindingPortInfo(test_nec_plugin.NecPluginV2TestCase):
             with self.subnet(network=net1) as subnet1:
                 with self.port(subnet=subnet1) as port:
                     # By default user is admin - now test non admin user
-                    # Note that 404 is returned when prohibit by policy.
-                    # See comment for PolicyNotAuthorized except clause
-                    # in update() in neutron.api.v2.base.Controller.
                     port_id = port['port']['id']
                     ctx = self._get_non_admin_context()
                     port = self._update('ports', port_id,
                                         {'port': profile_arg},
-                                        expected_code=404,
+                                        expected_code=exc.HTTPForbidden.code,
                                         neutron_context=ctx)
                 self.assertEqual(self.ofc.create_ofc_port.call_count, 0)
 

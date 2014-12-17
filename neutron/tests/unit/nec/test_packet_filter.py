@@ -100,6 +100,8 @@ class TestNecPluginPacketFilterBase(test_nec_plugin.NecPluginV2TestCase):
             yield pf
             if do_delete:
                 self._delete('packet_filters', pf['packet_filter']['id'])
+            if not network:
+                self._delete('networks', network_to_use['network']['id'])
 
     @contextlib.contextmanager
     def packet_filter_on_port(self, port=None, fmt=None, do_delete=True,
@@ -406,16 +408,24 @@ class TestNecPluginPacketFilter(TestNecPluginPacketFilterBase):
     def test_activate_pf_on_port_triggered_by_update_port(self):
         ctx = mock.ANY
         pf_dict = mock.ANY
+        self.ofc.set_raise_exc('create_ofc_packet_filter',
+                               nexc.PortInfoNotFound(id='fake_id'))
         with self.packet_filter_on_port(set_portinfo=False) as pf:
             pf_id = pf['packet_filter']['id']
             in_port_id = pf['packet_filter']['in_port']
 
-            self.assertFalse(self.ofc.create_ofc_packet_filter.called)
+            # create_ofc_packet_filter is now called even when
+            # in_port does not exists yet. In this case
+            # PortInfoNotFound exception is raised.
+            self.assertEqual(1, self.ofc.create_ofc_packet_filter.call_count)
             portinfo = {'id': in_port_id, 'port_no': 123}
             kw = {'added': [portinfo]}
+            self.ofc.set_raise_exc('create_ofc_packet_filter', None)
             self.rpcapi_update_ports(**kw)
-            self.ofc.create_ofc_packet_filter.assert_called_once_with(
-                ctx, pf_id, pf_dict)
+            self.assertEqual(2, self.ofc.create_ofc_packet_filter.call_count)
+            self.ofc.assert_has_calls([
+                mock.call.create_ofc_packet_filter(ctx, pf_id, pf_dict),
+            ])
 
             self.assertFalse(self.ofc.delete_ofc_packet_filter.called)
             kw = {'removed': [in_port_id]}
@@ -439,8 +449,8 @@ class TestNecPluginPacketFilter(TestNecPluginPacketFilterBase):
             mock.call.delete_ofc_packet_filter(ctx, pf_id),
         ]
         self.ofc.assert_has_calls(expected)
-        self.assertEqual(self.ofc.create_ofc_packet_filter.call_count, 1)
-        self.assertEqual(self.ofc.delete_ofc_packet_filter.call_count, 1)
+        self.assertEqual(2, self.ofc.create_ofc_packet_filter.call_count)
+        self.assertEqual(1, self.ofc.delete_ofc_packet_filter.call_count)
 
     def test_activate_pf_while_exists_on_ofc(self):
         ctx = mock.ANY
@@ -552,7 +562,7 @@ class TestNecPluginPacketFilter(TestNecPluginPacketFilterBase):
                    expected_code=webob.exc.HTTPNotFound.code)
 
     def test_auto_delete_pf_in_port_deletion(self):
-        with self.port(no_delete=True) as port:
+        with self.port() as port:
             network = self._show('networks', port['port']['network_id'])
 
             with self.packet_filter_on_network(network=network) as pfn:

@@ -11,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Kedar Kulkarni, One Convergence, Inc.
 
 import uuid
 
@@ -36,6 +34,9 @@ class OneConvergenceSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
     _plugin_name = PLUGIN_NAME
 
     def setUp(self):
+        if 'v6' in self._testMethodName:
+            self.skipTest("NVSD Plugin does not support IPV6.")
+
         def mocked_oneconvergence_init(self):
             def side_effect(*args, **kwargs):
                 return {'id': str(uuid.uuid4())}
@@ -65,52 +66,8 @@ class OneConvergenceSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
 
 class TestOneConvergenceSGServerRpcCallBack(
     OneConvergenceSecurityGroupsTestCase,
-    test_sg_rpc.SGServerRpcCallBackMixinTestCase):
-    def test_security_group_rules_for_devices_ipv6_egress(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_rules_for_devices_ipv6_ingress(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_rules_for_devices_ipv6_source_group(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_ra_rules_for_devices_ipv6_gateway_global(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_ra_rules_for_devices_ipv6_gateway_lla(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_ra_rules_for_devices_ipv6_no_gateway_port(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_rule_for_device_ipv6_multi_router_interfaces(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-
-class TestOneConvergenceSGServerRpcCallBackXML(
-    OneConvergenceSecurityGroupsTestCase,
-    test_sg_rpc.SGServerRpcCallBackMixinTestCaseXML):
-    def test_security_group_rules_for_devices_ipv6_egress(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_rules_for_devices_ipv6_ingress(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_rules_for_devices_ipv6_source_group(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_ra_rules_for_devices_ipv6_gateway_global(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_ra_rules_for_devices_ipv6_gateway_lla(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_ra_rules_for_devices_ipv6_no_gateway_port(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
-
-    def test_security_group_rule_for_device_ipv6_multi_router_interfaces(self):
-        self.skipTest("NVSD Plugin does not support IPV6.")
+    test_sg_rpc.SGServerRpcCallBackTestCase):
+    pass
 
 
 class TestOneConvergenceSecurityGroups(OneConvergenceSecurityGroupsTestCase,
@@ -136,7 +93,7 @@ class TestOneConvergenceSecurityGroups(OneConvergenceSecurityGroupsTestCase,
                                            req.get_response(self.api))
                     port_id = res['port']['id']
                     plugin = manager.NeutronManager.get_plugin()
-                    port_dict = plugin.callbacks.get_port_from_device(port_id)
+                    port_dict = plugin.get_port_from_device(port_id)
                     self.assertEqual(port_id, port_dict['id'])
                     self.assertEqual([security_group_id],
                                      port_dict[ext_sg.SECURITYGROUPS])
@@ -148,9 +105,5 @@ class TestOneConvergenceSecurityGroups(OneConvergenceSecurityGroupsTestCase,
     def test_security_group_get_port_from_device_with_no_port(self):
 
         plugin = manager.NeutronManager.get_plugin()
-        port_dict = plugin.callbacks.get_port_from_device('bad_device_id')
+        port_dict = plugin.get_port_from_device('bad_device_id')
         self.assertIsNone(port_dict)
-
-
-class TestOneConvergenceSecurityGroupsXML(TestOneConvergenceSecurityGroups):
-    fmt = 'xml'

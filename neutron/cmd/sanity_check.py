@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2014 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -19,12 +17,16 @@ import sys
 
 from neutron.cmd.sanity import checks
 from neutron.common import config
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 from oslo.config import cfg
 
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('AGENT', 'neutron.plugins.openvswitch.common.config')
+cfg.CONF.import_group('OVS', 'neutron.plugins.openvswitch.common.config')
+cfg.CONF.import_group('ml2_sriov',
+                      'neutron.plugins.ml2.drivers.mech_sriov.mech_driver')
 
 
 class BoolOptCallback(cfg.BoolOpt):
@@ -36,19 +38,48 @@ class BoolOptCallback(cfg.BoolOpt):
 def check_ovs_vxlan():
     result = checks.vxlan_supported(root_helper=cfg.CONF.AGENT.root_helper)
     if not result:
-        LOG.error(_('Check for Open vSwitch VXLAN support failed. '
-                    'Please ensure that the version of openvswitch '
-                    'being used has VXLAN support.'))
+        LOG.error(_LE('Check for Open vSwitch VXLAN support failed. '
+                      'Please ensure that the version of openvswitch '
+                      'being used has VXLAN support.'))
     return result
 
 
 def check_ovs_patch():
     result = checks.patch_supported(root_helper=cfg.CONF.AGENT.root_helper)
     if not result:
-        LOG.error(_('Check for Open vSwitch patch port support failed. '
-                    'Please ensure that the version of openvswitch '
-                    'being used has patch port support or disable features '
-                    'requiring patch ports (gre/vxlan, etc.).'))
+        LOG.error(_LE('Check for Open vSwitch patch port support failed. '
+                      'Please ensure that the version of openvswitch '
+                      'being used has patch port support or disable features '
+                      'requiring patch ports (gre/vxlan, etc.).'))
+    return result
+
+
+def check_nova_notify():
+    result = checks.nova_notify_supported()
+    if not result:
+        LOG.error(_LE('Nova notifications are enabled, but novaclient is not '
+                      'installed. Either disable nova notifications or '
+                      'install python-novaclient.'))
+    return result
+
+
+def check_arp_responder():
+    result = checks.arp_responder_supported(
+        root_helper=cfg.CONF.AGENT.root_helper)
+    if not result:
+        LOG.error(_LE('Check for Open vSwitch ARP responder support failed. '
+                      'Please ensure that the version of openvswitch '
+                      'being used has ARP flows support.'))
+    return result
+
+
+def check_vf_management():
+    result = checks.vf_management_supported(
+        root_helper=cfg.CONF.AGENT.root_helper)
+    if not result:
+        LOG.error(_LE('Check for VF management support failed. '
+                      'Please ensure that the version of ip link '
+                      'being used has VF support.'))
     return result
 
 
@@ -58,6 +89,13 @@ OPTS = [
                     help=_('Check for vxlan support')),
     BoolOptCallback('ovs_patch', check_ovs_patch, default=False,
                     help=_('Check for patch port support')),
+    BoolOptCallback('nova_notify', check_nova_notify, default=False,
+                    help=_('Check for nova notification support')),
+    BoolOptCallback('arp_responder', check_arp_responder, default=False,
+                    help=_('Check for ARP responder support')),
+    BoolOptCallback('vf_management', check_vf_management, default=False,
+                    help=_('Check for VF management support')),
+
 ]
 
 
@@ -71,21 +109,26 @@ def enable_tests_from_config():
         cfg.CONF.set_override('ovs_vxlan', True)
     if cfg.CONF.AGENT.tunnel_types:
         cfg.CONF.set_override('ovs_patch', True)
+    if not cfg.CONF.OVS.use_veth_interconnection:
+        cfg.CONF.set_override('ovs_patch', True)
+    if (cfg.CONF.notify_nova_on_port_status_changes or
+            cfg.CONF.notify_nova_on_port_data_changes):
+        cfg.CONF.set_override('nova_notify', True)
+    if cfg.CONF.AGENT.arp_responder:
+        cfg.CONF.set_override('arp_responder', True)
+    if cfg.CONF.ml2_sriov.agent_required:
+        cfg.CONF.set_override('vf_management', True)
 
 
 def all_tests_passed():
-    res = True
-    for opt in OPTS:
-        if cfg.CONF.get(opt.name):
-            res &= opt.callback()
-    return res
+    return all(opt.callback() for opt in OPTS if cfg.CONF.get(opt.name))
 
 
 def main():
     cfg.CONF.register_cli_opts(OPTS)
     cfg.CONF.set_override('use_stderr', True)
-    config.setup_logging(cfg.CONF)
-    config.parse(sys.argv[1:], default_config_files=[])
+    config.setup_logging()
+    config.init(sys.argv[1:], default_config_files=[])
 
     if cfg.CONF.config_file:
         enable_tests_from_config()

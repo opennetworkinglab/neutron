@@ -1,7 +1,5 @@
 # Copyright (C) 2013 eNovance SAS <licensing@enovance.com>
 #
-# Author: Sylvain Afchain <sylvain.afchain@enovance.com>
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -18,10 +16,11 @@ import mock
 from oslo.config import cfg
 
 from neutron.agent.common import config
-from neutron.openstack.common.notifier import test_notifier
 from neutron.openstack.common import uuidutils
 from neutron.services.metering.agents import metering_agent
 from neutron.tests import base
+from neutron.tests import fake_notifier
+from neutron.tests.unit import testlib_plugin
 
 
 _uuid = uuidutils.generate_uuid
@@ -38,7 +37,8 @@ ROUTERS = [{'status': 'ACTIVE',
             'id': _uuid()}]
 
 
-class TestMeteringOperations(base.BaseTestCase):
+class TestMeteringOperations(base.BaseTestCase,
+                             testlib_plugin.NotificationSetupHelper):
 
     def setUp(self):
         super(TestMeteringOperations, self).setUp()
@@ -96,8 +96,8 @@ class TestMeteringOperations(base.BaseTestCase):
                                                           'bytes': 444}}
         self.agent._metering_loop()
 
-        self.assertNotEqual(len(test_notifier.NOTIFICATIONS), 0)
-        for n in test_notifier.NOTIFICATIONS:
+        self.assertNotEqual(len(fake_notifier.NOTIFICATIONS), 0)
+        for n in fake_notifier.NOTIFICATIONS:
             if n['event_type'] == 'l3.meter':
                 break
 
@@ -158,3 +158,9 @@ class TestMeteringDriver(base.BaseTestCase):
                                              {'driver': self.noop_driver,
                                               'func':
                                               'add_metering_label'})
+
+    def test_init_chain(self):
+        with mock.patch('neutron.openstack.common.'
+                        'periodic_task.PeriodicTasks.__init__') as init:
+            metering_agent.MeteringAgent('my agent', cfg.CONF)
+        init.assert_called_once_with()

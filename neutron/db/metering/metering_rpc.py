@@ -1,7 +1,5 @@
 # Copyright (C) 2014 eNovance SAS <licensing@enovance.com>
 #
-# Author: Sylvain Afchain <sylvain.afchain@enovance.com>
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -14,9 +12,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from oslo import messaging
+
 from neutron.common import constants as consts
-from neutron.common import rpc as p_rpc
 from neutron.common import utils
+from neutron.i18n import _LE
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as service_constants
@@ -26,13 +26,10 @@ LOG = logging.getLogger(__name__)
 
 class MeteringRpcCallbacks(object):
 
-    RPC_API_VERSION = '1.0'
+    target = messaging.Target(version='1.0')
 
     def __init__(self, meter_plugin):
         self.meter_plugin = meter_plugin
-
-    def create_rpc_dispatcher(self):
-        return p_rpc.PluginRpcDispatcher([self])
 
     def get_sync_data_metering(self, context, **kwargs):
         l3_plugin = manager.NeutronManager.get_service_plugins().get(
@@ -47,7 +44,7 @@ class MeteringRpcCallbacks(object):
         else:
             agents = l3_plugin.get_l3_agents(context, filters={'host': [host]})
             if not agents:
-                LOG.error(_('Unable to find agent %s.'), host)
+                LOG.error(_LE('Unable to find agent %s.'), host)
                 return
 
             routers = l3_plugin.list_routers_on_l3_agent(context, agents[0].id)

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -17,8 +15,9 @@
 
 import abc
 
+from oslo.serialization import jsonutils
+
 from neutron.api import extensions
-from neutron.openstack.common import jsonutils
 from neutron import wsgi
 
 

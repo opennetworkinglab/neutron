@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Cloudbase Solutions SRL
 # Copyright 2013 Pedro Navarro Perez
 # All Rights Reserved.
@@ -20,12 +18,13 @@
 Unit Tests for hyperv neutron rpc
 """
 
+import contextlib
+
 import mock
+from oslo_context import context as oslo_context
 
 from neutron.agent import rpc as agent_rpc
 from neutron.common import topics
-from neutron.openstack.common import context
-from neutron.openstack.common import rpc
 from neutron.plugins.hyperv import agent_notifier_api as ana
 from neutron.plugins.hyperv.common import constants
 from neutron.tests import base
@@ -35,22 +34,33 @@ class rpcHyperVApiTestCase(base.BaseTestCase):
 
     def _test_hyperv_neutron_api(
             self, rpcapi, topic, method, rpc_method, **kwargs):
-        ctxt = context.RequestContext('fake_user', 'fake_project')
-        expected_retval = 'foo' if method == 'call' else None
-        expected_msg = rpcapi.make_msg(method, **kwargs)
-        expected_msg['version'] = rpcapi.BASE_RPC_API_VERSION
-        if rpc_method == 'cast' and method == 'run_instance':
-            kwargs['call'] = False
+        ctxt = oslo_context.RequestContext('fake_user', 'fake_project')
+        expected_retval = 'foo' if rpc_method == 'call' else None
+        expected_version = kwargs.pop('version', None)
+        fanout = kwargs.pop('fanout', False)
 
-        with mock.patch.object(rpc, rpc_method) as rpc_method_mock:
-            rpc_method_mock.return_value = expected_retval
+        with contextlib.nested(
+            mock.patch.object(rpcapi.client, rpc_method),
+            mock.patch.object(rpcapi.client, 'prepare'),
+        ) as (
+            rpc_mock, prepare_mock
+        ):
+            prepare_mock.return_value = rpcapi.client
+            rpc_mock.return_value = expected_retval
             retval = getattr(rpcapi, method)(ctxt, **kwargs)
 
         self.assertEqual(retval, expected_retval)
-        expected_args = [ctxt, topic, expected_msg]
-        for arg, expected_arg in zip(rpc_method_mock.call_args[0],
-                                     expected_args):
-            self.assertEqual(arg, expected_arg)
+
+        prepare_args = {}
+        if expected_version:
+            prepare_args['version'] = expected_version
+        if fanout:
+            prepare_args['fanout'] = True
+        if topic:
+            prepare_args['topic'] = topic
+        prepare_mock.assert_called_once_with(**prepare_args)
+
+        rpc_mock.assert_called_once_with(ctxt, method, **kwargs)
 
     def test_delete_network(self):
         rpcapi = ana.AgentNotifierApi(topics.AGENT)
@@ -60,7 +70,7 @@ class rpcHyperVApiTestCase(base.BaseTestCase):
                 topics.AGENT,
                 topics.NETWORK,
                 topics.DELETE),
-            'network_delete', rpc_method='fanout_cast',
+            'network_delete', rpc_method='cast', fanout=True,
             network_id='fake_request_spec')
 
     def test_port_update(self):
@@ -71,7 +81,7 @@ class rpcHyperVApiTestCase(base.BaseTestCase):
                 topics.AGENT,
                 topics.PORT,
                 topics.UPDATE),
-            'port_update', rpc_method='fanout_cast',
+            'port_update', rpc_method='cast', fanout=True,
             port='fake_port',
             network_type='fake_network_type',
             segmentation_id='fake_segmentation_id',
@@ -85,7 +95,7 @@ class rpcHyperVApiTestCase(base.BaseTestCase):
                 topics.AGENT,
                 topics.PORT,
                 topics.DELETE),
-            'port_delete', rpc_method='fanout_cast',
+            'port_delete', rpc_method='cast', fanout=True,
             port_id='port_id')
 
     def test_tunnel_update(self):
@@ -96,21 +106,31 @@ class rpcHyperVApiTestCase(base.BaseTestCase):
                 topics.AGENT,
                 constants.TUNNEL,
                 topics.UPDATE),
-            'tunnel_update', rpc_method='fanout_cast',
+            'tunnel_update', rpc_method='cast', fanout=True,
             tunnel_ip='fake_ip', tunnel_id='fake_id')
 
     def test_device_details(self):
         rpcapi = agent_rpc.PluginApi(topics.PLUGIN)
         self._test_hyperv_neutron_api(
-            rpcapi, topics.PLUGIN,
+            rpcapi, None,
             'get_device_details', rpc_method='call',
             device='fake_device',
-            agent_id='fake_agent_id')
+            agent_id='fake_agent_id',
+            host='fake_host')
+
+    def test_devices_details_list(self):
+        rpcapi = agent_rpc.PluginApi(topics.PLUGIN)
+        self._test_hyperv_neutron_api(
+            rpcapi, None,
+            'get_devices_details_list', rpc_method='call',
+            devices=['fake_device1', 'fake_device2'],
+            agent_id='fake_agent_id', host='fake_host',
+            version='1.3')
 
     def test_update_device_down(self):
         rpcapi = agent_rpc.PluginApi(topics.PLUGIN)
         self._test_hyperv_neutron_api(
-            rpcapi, topics.PLUGIN,
+            rpcapi, None,
             'update_device_down', rpc_method='call',
             device='fake_device',
             agent_id='fake_agent_id',
@@ -119,7 +139,7 @@ class rpcHyperVApiTestCase(base.BaseTestCase):
     def test_tunnel_sync(self):
         rpcapi = agent_rpc.PluginApi(topics.PLUGIN)
         self._test_hyperv_neutron_api(
-            rpcapi, topics.PLUGIN,
+            rpcapi, None,
             'tunnel_sync', rpc_method='call',
             tunnel_ip='fake_tunnel_ip',
             tunnel_type=None)

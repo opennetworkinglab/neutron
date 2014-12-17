@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.agent import securitygroups_rpc
 from neutron.common import constants
 from neutron.extensions import portbindings
 from neutron.openstack.common import log
@@ -33,18 +34,20 @@ class OpenvswitchMechanismDriver(mech_agent.SimpleAgentMechanismDriverBase):
     """
 
     def __init__(self):
+        sg_enabled = securitygroups_rpc.is_firewall_enabled()
+        vif_details = {portbindings.CAP_PORT_FILTER: sg_enabled,
+                       portbindings.OVS_HYBRID_PLUG: sg_enabled}
         super(OpenvswitchMechanismDriver, self).__init__(
             constants.AGENT_TYPE_OVS,
             portbindings.VIF_TYPE_OVS,
-            {portbindings.CAP_PORT_FILTER: True,
-             portbindings.OVS_HYBRID_PLUG: True})
+            vif_details)
 
     def check_segment_for_agent(self, segment, agent):
         mappings = agent['configurations'].get('bridge_mappings', {})
         tunnel_types = agent['configurations'].get('tunnel_types', [])
-        LOG.debug(_("Checking segment: %(segment)s "
-                    "for mappings: %(mappings)s "
-                    "with tunnel_types: %(tunnel_types)s"),
+        LOG.debug("Checking segment: %(segment)s "
+                  "for mappings: %(mappings)s "
+                  "with tunnel_types: %(tunnel_types)s",
                   {'segment': segment, 'mappings': mappings,
                    'tunnel_types': tunnel_types})
         network_type = segment[api.NETWORK_TYPE]

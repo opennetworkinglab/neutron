@@ -15,8 +15,8 @@
 #
 
 import mock
+from oslo.serialization import jsonutils
 
-from neutron.openstack.common import jsonutils
 from neutron.plugins.vmware.api_client import exception
 from neutron.plugins.vmware.common import utils as nsx_utils
 from neutron.plugins.vmware import nsxlib
@@ -165,6 +165,7 @@ class L2GatewayTestCase(base.NsxlibTestCase):
                     "type": '%sConnector' % connector_type}],
             "admin_status_enabled": True
         }
+        body.get("tags").sort()
         if client_certificate:
             body["credential"] = {
                 "client_certificate": {
@@ -191,7 +192,7 @@ class L2GatewayTestCase(base.NsxlibTestCase):
             request_mock.assert_called_once_with(
                 "POST",
                 "/ws.v1/transport-node",
-                jsonutils.dumps(expected_req_body),
+                jsonutils.dumps(expected_req_body, sort_keys=True),
                 cluster=self.fake_cluster)
 
     def test_update_gw_device(self):
@@ -215,7 +216,7 @@ class L2GatewayTestCase(base.NsxlibTestCase):
             request_mock.assert_called_once_with(
                 "PUT",
                 "/ws.v1/transport-node/whatever",
-                jsonutils.dumps(expected_req_body),
+                jsonutils.dumps(expected_req_body, sort_keys=True),
                 cluster=self.fake_cluster)
 
     def test_update_gw_device_without_certificate(self):
@@ -238,7 +239,7 @@ class L2GatewayTestCase(base.NsxlibTestCase):
             request_mock.assert_called_once_with(
                 "PUT",
                 "/ws.v1/transport-node/whatever",
-                jsonutils.dumps(expected_req_body),
+                jsonutils.dumps(expected_req_body, sort_keys=True),
                 cluster=self.fake_cluster)
 
     def test_get_gw_device_status(self):
@@ -281,7 +282,7 @@ class L2GatewayTestCase(base.NsxlibTestCase):
                 "GET",
                 ("/ws.v1/transport-node?fields=uuid,tags&"
                  "relations=TransportNodeStatus&"
-                 "tag_scope=os_tid&tag=ssc_napoli&"
+                 "tag=ssc_napoli&tag_scope=os_tid&"
                  "_page_length=1000&tag_scope=quantum"),
                 cluster=self.fake_cluster)
 

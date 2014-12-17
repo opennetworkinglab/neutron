@@ -29,6 +29,10 @@ from neutron.services import service_base
 
 
 # Loadbalancer Exceptions
+class DelayOrTimeoutInvalid(qexception.BadRequest):
+    message = _("Delay must be greater than or equal to timeout")
+
+
 class NoEligibleBackend(qexception.NotFound):
     message = _("No eligible backend for pool %(pool_id)s")
 
@@ -180,7 +184,9 @@ RESOURCE_ATTRIBUTE_MAP = {
                      'validate': {'type:string': None},
                      'is_visible': True, 'default': attr.ATTR_NOT_SPECIFIED},
         'lb_method': {'allow_post': True, 'allow_put': True,
-                      'validate': {'type:string': None},
+                      'validate': {'type:values': ['ROUND_ROBIN',
+                                                   'LEAST_CONNECTIONS',
+                                                   'SOURCE_IP']},
                       'is_visible': True},
         'members': {'allow_post': False, 'allow_put': False,
                     'is_visible': True},

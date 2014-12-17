@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -26,6 +24,7 @@ from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.tests import base
 from neutron.tests.unit import dummy_plugin
+from neutron.tests.unit import testlib_plugin
 
 
 LOG = logging.getLogger(__name__)
@@ -41,7 +40,8 @@ class CorePluginWithAgentNotifiers(object):
                        'dhcp': 'dhcp_agent_notifier'}
 
 
-class NeutronManagerTestCase(base.BaseTestCase):
+class NeutronManagerTestCase(base.BaseTestCase,
+                             testlib_plugin.PluginSetupHelper):
 
     def setUp(self):
         super(NeutronManagerTestCase, self).setUp()
@@ -58,9 +58,8 @@ class NeutronManagerTestCase(base.BaseTestCase):
         mgr = manager.NeutronManager.get_instance()
         plugin = mgr.get_service_plugins()[constants.DUMMY]
 
-        self.assertTrue(
-            isinstance(plugin,
-                       (dummy_plugin.DummyServicePlugin, types.ClassType)),
+        self.assertIsInstance(
+            plugin, (dummy_plugin.DummyServicePlugin, types.ClassType),
             "loaded plugin should be of type neutronDummyPlugin")
 
     def test_service_plugin_by_name_is_loaded(self):
@@ -69,9 +68,8 @@ class NeutronManagerTestCase(base.BaseTestCase):
         mgr = manager.NeutronManager.get_instance()
         plugin = mgr.get_service_plugins()[constants.DUMMY]
 
-        self.assertTrue(
-            isinstance(plugin,
-                       (dummy_plugin.DummyServicePlugin, types.ClassType)),
+        self.assertIsInstance(
+            plugin, (dummy_plugin.DummyServicePlugin, types.ClassType),
             "loaded plugin should be of type neutronDummyPlugin")
 
     def test_multiple_plugins_specified_for_service_type(self):
@@ -81,7 +79,8 @@ class NeutronManagerTestCase(base.BaseTestCase):
                                "neutron.tests.unit.dummy_plugin."
                                "DummyServicePlugin"])
         cfg.CONF.set_override("core_plugin", DB_PLUGIN_KLASS)
-        self.assertRaises(ValueError, manager.NeutronManager.get_instance)
+        e = self.assertRaises(ValueError, manager.NeutronManager.get_instance)
+        self.assertIn(constants.DUMMY, e.message)
 
     def test_multiple_plugins_by_name_specified_for_service_type(self):
         cfg.CONF.set_override("service_plugins", ["dummy", "dummy"])
@@ -102,7 +101,8 @@ class NeutronManagerTestCase(base.BaseTestCase):
         cfg.CONF.set_override("core_plugin",
                               "neutron.tests.unit.test_neutron_manager."
                               "MultiServiceCorePlugin")
-        self.assertRaises(ValueError, manager.NeutronManager.get_instance)
+        e = self.assertRaises(ValueError, manager.NeutronManager.get_instance)
+        self.assertIn(constants.DUMMY, e.message)
 
     def test_core_plugin_supports_services(self):
         cfg.CONF.set_override("core_plugin",

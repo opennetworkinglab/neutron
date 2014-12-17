@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -18,18 +16,21 @@
 import re
 
 import eventlet
+eventlet.monkey_patch()
+
 from oslo.config import cfg
+from oslo.utils import importutils
 
 from neutron.agent.common import config as agent_config
 from neutron.agent import dhcp_agent
-from neutron.agent import l3_agent
+from neutron.agent.l3 import agent as l3_agent
 from neutron.agent.linux import dhcp
 from neutron.agent.linux import interface
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import ovs_lib
 from neutron.api.v2 import attributes
 from neutron.common import config
-from neutron.openstack.common import importutils
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 
 
@@ -113,7 +114,7 @@ def unplug_device(conf, device):
             bridge = ovs_lib.OVSBridge(bridge_name, root_helper)
             bridge.delete_port(device.name)
         else:
-            LOG.debug(_('Unable to find bridge for device: %s'), device.name)
+            LOG.debug('Unable to find bridge for device: %s', device.name)
 
 
 def destroy_namespace(conf, namespace, force=False):
@@ -137,7 +138,7 @@ def destroy_namespace(conf, namespace, force=False):
 
         ip.garbage_collect_namespace()
     except Exception:
-        LOG.exception(_('Error unable to destroy namespace: %s'), namespace)
+        LOG.exception(_LE('Error unable to destroy namespace: %s'), namespace)
 
 
 def main():
@@ -157,11 +158,9 @@ def main():
     installation as it will blindly purge namespaces and their devices. This
     option also kills any lingering DHCP instances.
     """
-    eventlet.monkey_patch()
-
     conf = setup_conf()
     conf()
-    config.setup_logging(conf)
+    config.setup_logging()
 
     root_helper = agent_config.get_root_helper(conf)
     # Identify namespaces that are candidates for deletion.

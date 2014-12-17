@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Swaminathan Vasudevan, Hewlett-Packard.
 
 import abc
 
@@ -32,7 +30,7 @@ class VPNServiceNotFound(qexception.NotFound):
 
 
 class IPsecSiteConnectionNotFound(qexception.NotFound):
-    message = _("ipsec_site_connection %(ipsecsite_conn_id)s not found")
+    message = _("ipsec_site_connection %(ipsec_site_conn_id)s not found")
 
 
 class IPsecSiteConnectionDpdIntervalValueError(qexception.InvalidInput):
@@ -64,6 +62,10 @@ class VPNServiceInUse(qexception.InUse):
 
 class RouterInUseByVPNService(qexception.InUse):
     message = _("Router %(router_id)s is used by VPNService %(vpnservice_id)s")
+
+
+class SubnetInUseByVPNService(qexception.InUse):
+    message = _("Subnet %(subnet_id)s is used by VPNService %(vpnservice_id)s")
 
 
 class VPNStateInvalidToUpdate(qexception.BadRequest):

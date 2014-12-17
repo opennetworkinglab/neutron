@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,7 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
 import netaddr
 
@@ -78,7 +75,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
             if self.autocheck:
                 raise Exception(_('(delete_tenant) OFC tenant %s not found')
                                 % ofc_tenant_id)
-        LOG.debug(_('delete_tenant: SUCCEED'))
+        LOG.debug('delete_tenant: SUCCEED')
 
     @call_log.log
     def create_network(self, ofc_tenant_id, description, network_id=None):
@@ -103,7 +100,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
                                 % ofc_network_id)
         data = {'description': description}
         self.ofc_network_dict[ofc_network_id].update(data)
-        LOG.debug(_('update_network: SUCCEED'))
+        LOG.debug('update_network: SUCCEED')
 
     @call_log.log
     def delete_network(self, ofc_network_id):
@@ -113,7 +110,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
             if self.autocheck:
                 raise Exception(_('(delete_network) OFC network %s not found')
                                 % ofc_network_id)
-        LOG.debug(_('delete_network: SUCCEED'))
+        LOG.debug('delete_network: SUCCEED')
 
     @call_log.log
     def create_port(self, ofc_network_id, info, port_id=None, filters=None):
@@ -139,14 +136,13 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
             if self.autocheck:
                 raise Exception(_('(delete_port) OFC port %s not found')
                                 % ofc_port_id)
-        LOG.debug(_('delete_port: SUCCEED'))
+        LOG.debug('delete_port: SUCCEED')
 
     @classmethod
     def filter_supported(cls):
         return True
 
-    def create_filter(self, ofc_network_id, filter_dict,
-                      portinfo=None, filter_id=None, apply_ports=None):
+    def create_filter(self, context, filter_dict, filter_id=None):
         return "ofc-" + filter_id[:-4]
 
     def delete_filter(self, ofc_filter_id):
@@ -194,7 +190,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
             if self.autocheck:
                 raise Exception(_('(delete_router) OFC router %s not found')
                                 % ofc_router_id)
-        LOG.debug(_('delete_router: SUCCEED'))
+        LOG.debug('delete_router: SUCCEED')
 
     @call_log.log
     def add_router_interface(self, ofc_router_id, ofc_net_id,
@@ -217,7 +213,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
                                            'network_id': ofc_net_id,
                                            'ip_address': ip_address,
                                            'mac_address': mac_address}
-        LOG.debug(_('add_router_interface: SUCCEED (if_id=%s)'), if_id)
+        LOG.debug('add_router_interface: SUCCEED (if_id=%s)', if_id)
         return if_id
 
     @call_log.log
@@ -234,7 +230,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
             inf.update({'ip_address': ip_address})
         if mac_address:
             inf.update({'mac_address': mac_address})
-        LOG.debug(_('update_router_route: SUCCEED'))
+        LOG.debug('update_router_route: SUCCEED')
 
     @call_log.log
     def delete_router_interface(self, ofc_router_inf_id):
@@ -245,7 +241,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
                 raise Exception(_('(delete_router_interface) '
                                   'OFC router interface %s not found')
                                 % ofc_router_inf_id)
-        LOG.debug(_('delete_router_interface: SUCCEED'))
+        LOG.debug('delete_router_interface: SUCCEED')
 
     @call_log.log
     def add_router_route(self, ofc_router_id, destination, nexthop):
@@ -265,7 +261,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
         self.ofc_router_route_dict[route_id] = {'router_id': ofc_router_id,
                                                 'destination': destination,
                                                 'nexthop': nexthop}
-        LOG.debug(_('add_router_route: SUCCEED (route_id=%s)'), route_id)
+        LOG.debug('add_router_route: SUCCEED (route_id=%s)', route_id)
         return route_id
 
     @call_log.log
@@ -276,7 +272,7 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
             if self.autocheck:
                 raise Exception(_('(delete_router_route) OFC router route %s '
                                   'not found') % ofc_router_route_id)
-        LOG.debug(_('delete_router_route: SUCCEED'))
+        LOG.debug('delete_router_route: SUCCEED')
 
     @call_log.log
     def list_router_routes(self, ofc_router_id):
@@ -289,5 +285,5 @@ class StubOFCDriver(ofc_driver_base.OFCDriverBase):
                    'nexthop': v['nexthop']}
                   for k, v in self.ofc_router_route_dict.items()
                   if v['router_id'] == ofc_router_id]
-        LOG.debug(_('list_router_routes: routes=%s'), routes)
+        LOG.debug('list_router_routes: routes=%s', routes)
         return routes

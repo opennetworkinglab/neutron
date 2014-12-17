@@ -11,19 +11,20 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mark McClain, DreamHost
 
 from logging import config as logging_config
 
 from alembic import context
-from sqlalchemy import create_engine, pool
+from oslo.config import cfg
+from oslo.db.sqlalchemy import session
+import sqlalchemy as sa
+from sqlalchemy import event
 
+from neutron.db.migration.models import head  # noqa
 from neutron.db import model_base
-from neutron.openstack.common import importutils
 
 
-DATABASE_QUOTA_DRIVER = 'neutron.extensions._quotav2_driver.DbQuotaDriver'
+MYSQL_ENGINE = None
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -34,15 +35,19 @@ neutron_config = config.neutron_config
 # This line sets up loggers basically.
 logging_config.fileConfig(config.config_file_name)
 
-plugin_class_path = neutron_config.core_plugin
-active_plugins = [plugin_class_path]
-active_plugins += neutron_config.service_plugins
-
-for class_path in active_plugins:
-    importutils.import_class(class_path)
-
 # set the target for 'autogenerate' support
 target_metadata = model_base.BASEV2.metadata
+
+
+def set_mysql_engine():
+    try:
+        mysql_engine = neutron_config.command.mysql_engine
+    except cfg.NoSuchOptError:
+        mysql_engine = None
+
+    global MYSQL_ENGINE
+    MYSQL_ENGINE = (mysql_engine or
+                    model_base.BASEV2.__table_args__['mysql_engine'])
 
 
 def run_migrations_offline():
@@ -55,6 +60,8 @@ def run_migrations_offline():
     script output.
 
     """
+    set_mysql_engine()
+
     kwargs = dict()
     if neutron_config.database.connection:
         kwargs['url'] = neutron_config.database.connection
@@ -63,8 +70,13 @@ def run_migrations_offline():
     context.configure(**kwargs)
 
     with context.begin_transaction():
-        context.run_migrations(active_plugins=active_plugins,
-                               options=build_options())
+        context.run_migrations()
+
+
+@event.listens_for(sa.Table, 'after_parent_attach')
+def set_storage_engine(target, parent):
+    if MYSQL_ENGINE:
+        target.kwargs['mysql_engine'] = MYSQL_ENGINE
 
 
 def run_migrations_online():
@@ -74,9 +86,8 @@ def run_migrations_online():
     and associate a connection with the context.
 
     """
-    engine = create_engine(
-        neutron_config.database.connection,
-        poolclass=pool.NullPool)
+    set_mysql_engine()
+    engine = session.create_engine(neutron_config.database.connection)
 
     connection = engine.connect()
     context.configure(
@@ -86,18 +97,10 @@ def run_migrations_online():
 
     try:
         with context.begin_transaction():
-            context.run_migrations(active_plugins=active_plugins,
-                                   options=build_options())
+            context.run_migrations()
     finally:
         connection.close()
-
-
-def build_options():
-    return {'folsom_quota_db_enabled': is_db_quota_enabled()}
-
-
-def is_db_quota_enabled():
-    return neutron_config.QUOTAS.quota_driver == DATABASE_QUOTA_DRIVER
+        engine.dispose()
 
 
 if context.is_offline_mode():

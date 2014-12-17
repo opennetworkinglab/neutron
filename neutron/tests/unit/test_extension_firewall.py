@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -14,8 +12,6 @@
 #  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #  License for the specific language governing permissions and limitations
 #  under the License.
-
-# @author: Sumit Naiksatam, sumitnaiksatam@gmail.com, Big Switch Networks, Inc.
 
 import copy
 
@@ -152,10 +148,9 @@ class FirewallExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         res = self.api.post(_get_path('fw/firewall_rules', fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
-        instance.create_firewall_rule.assert_called_with(mock.ANY,
-                                                         firewall_rule=
-                                                         {'firewall_rule':
-                                                          expected_call_args})
+        instance.create_firewall_rule.assert_called_with(
+            mock.ANY,
+            firewall_rule={'firewall_rule': expected_call_args})
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
         res = self.deserialize(res)
         self.assertIn('firewall_rule', res)
@@ -217,10 +212,10 @@ class FirewallExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                                      fmt=self.fmt),
                            self.serialize(update_data))
 
-        instance.update_firewall_rule.assert_called_with(mock.ANY,
-                                                         rule_id,
-                                                         firewall_rule=
-                                                         update_data)
+        instance.update_firewall_rule.assert_called_with(
+            mock.ANY,
+            rule_id,
+            firewall_rule=update_data)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)
         self.assertIn('firewall_rule', res)
@@ -246,9 +241,9 @@ class FirewallExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                                       fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/%s' % self.fmt)
-        instance.create_firewall_policy.assert_called_with(mock.ANY,
-                                                           firewall_policy=
-                                                           data)
+        instance.create_firewall_policy.assert_called_with(
+            mock.ANY,
+            firewall_policy=data)
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
         res = self.deserialize(res)
         self.assertIn('firewall_policy', res)
@@ -303,10 +298,10 @@ class FirewallExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                                      fmt=self.fmt),
                            self.serialize(update_data))
 
-        instance.update_firewall_policy.assert_called_with(mock.ANY,
-                                                           policy_id,
-                                                           firewall_policy=
-                                                           update_data)
+        instance.update_firewall_policy.assert_called_with(
+            mock.ANY,
+            policy_id,
+            firewall_policy=update_data)
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)
         self.assertIn('firewall_policy', res)
@@ -375,10 +370,6 @@ class FirewallExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertEqual(res.status_int, exc.HTTPOk.code)
         res = self.deserialize(res)
         self.assertEqual(res, return_value)
-
-
-class FirewallExtensionTestCaseXML(FirewallExtensionTestCase):
-    fmt = 'xml'
 
 
 class TestFirewallAttributeValidators(base.BaseTestCase):

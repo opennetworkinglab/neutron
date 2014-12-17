@@ -279,7 +279,7 @@ class TestLoadbalancerPlugin(
             )
             with self.vip(
                 router_id=self._create_and_get_router(),
-                pool=pool, subnet=subnet, no_delete=True) as vip:
+                pool=pool, subnet=subnet, do_delete=False) as vip:
                 req = self.new_delete_request('vips', vip['vip']['id'])
                 res = req.get_response(self.ext_api)
                 self.assertEqual(res.status_int, 204)
@@ -361,7 +361,7 @@ class TestLoadbalancerPlugin(
             ) as (vip1, vip2, vip3):
                 self._test_list_with_sort(
                     'vip',
-                    (vip1, vip3, vip2),
+                    (vip1, vip2, vip3),
                     [('protocol_port', 'asc'), ('name', 'desc')]
                 )
                 req = self.new_list_request('vips')
@@ -508,7 +508,7 @@ class TestLoadbalancerPlugin(
                 router_id=self._create_and_get_router(),
                 pool=pool, subnet=subnet):
                 with self.member(pool_id=pool_id,
-                                 no_delete=True) as member:
+                                 do_delete=False) as member:
                     req = self.new_delete_request('members',
                                                   member['member']['id'])
                     res = req.get_response(self.ext_api)

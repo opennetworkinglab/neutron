@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Sumit Naiksatam, Cisco Systems, Inc.
 
 
 from neutron.plugins.common import constants as p_const

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, Big Switch Networks
 # All Rights Reserved.
 #
@@ -16,6 +14,7 @@
 #    under the License.
 
 from neutron.api.v2 import attributes
+from neutron.i18n import _LW
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -38,15 +37,15 @@ def put_port_hostid(context, port_id, host):
     # relational table generation until one of the functions is called.
     from neutron.db import portbindings_db
     if not attributes.is_attr_set(host):
-        LOG.warning(_("No host_id in port request to track port location."))
+        LOG.warning(_LW("No host_id in port request to track port location."))
         return
     if port_id == '':
-        LOG.warning(_("Received an empty port ID for host_id '%s'"), host)
+        LOG.warning(_LW("Received an empty port ID for host_id '%s'"), host)
         return
     if host == '':
-        LOG.debug(_("Received an empty host_id for port '%s'"), port_id)
+        LOG.debug("Received an empty host_id for port '%s'", port_id)
         return
-    LOG.debug(_("Logging port %(port)s on host_id %(host)s"),
+    LOG.debug("Logging port %(port)s on host_id %(host)s",
               {'port': port_id, 'host': host})
     with context.session.begin(subtransactions=True):
         location = portbindings_db.PortBindingPort(port_id=port_id, host=host)

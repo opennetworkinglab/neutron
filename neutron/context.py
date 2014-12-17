@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -18,11 +16,11 @@
 """Context: context for security/db session."""
 
 import copy
-
 import datetime
 
+from oslo_context import context as oslo_context
+
 from neutron.db import api as db_api
-from neutron.openstack.common import context as common_context
 from neutron.openstack.common import local
 from neutron.openstack.common import log as logging
 from neutron import policy
@@ -31,7 +29,7 @@ from neutron import policy
 LOG = logging.getLogger(__name__)
 
 
-class ContextBase(common_context.RequestContext):
+class ContextBase(oslo_context.RequestContext):
     """Security context and request information.
 
     Represents the user taking a given action within the system.
@@ -41,7 +39,7 @@ class ContextBase(common_context.RequestContext):
     def __init__(self, user_id, tenant_id, is_admin=None, read_deleted="no",
                  roles=None, timestamp=None, load_admin_roles=True,
                  request_id=None, tenant_name=None, user_name=None,
-                 overwrite=True, **kwargs):
+                 overwrite=True, auth_token=None, **kwargs):
         """Object initialization.
 
         :param read_deleted: 'no' indicates deleted records are hidden, 'yes'
@@ -54,7 +52,8 @@ class ContextBase(common_context.RequestContext):
         :param kwargs: Extra arguments that might be present, but we ignore
             because they possibly came in from older rpc messages.
         """
-        super(ContextBase, self).__init__(user=user_id, tenant=tenant_id,
+        super(ContextBase, self).__init__(auth_token=auth_token,
+                                          user=user_id, tenant=tenant_id,
                                           is_admin=is_admin,
                                           request_id=request_id)
         self.user_name = user_name
@@ -66,6 +65,7 @@ class ContextBase(common_context.RequestContext):
         self.timestamp = timestamp
         self._session = None
         self.roles = roles or []
+        self.is_advsvc = policy.check_is_advsvc(self)
         if self.is_admin is None:
             self.is_admin = policy.check_is_admin(self)
         elif self.is_admin and load_admin_roles:
@@ -80,8 +80,7 @@ class ContextBase(common_context.RequestContext):
         # Log only once the context has been configured to prevent
         # format errors.
         if kwargs:
-            LOG.debug(_('Arguments dropped when creating '
-                        'context: %s'), kwargs)
+            LOG.debug('Arguments dropped when creating context: %s', kwargs)
 
     @property
     def project_id(self):
@@ -132,6 +131,7 @@ class ContextBase(common_context.RequestContext):
                 'tenant_name': self.tenant_name,
                 'project_name': self.tenant_name,
                 'user_name': self.user_name,
+                'auth_token': self.auth_token,
                 }
 
     @classmethod
@@ -144,7 +144,7 @@ class ContextBase(common_context.RequestContext):
         context.is_admin = True
 
         if 'admin' not in [x.lower() for x in context.roles]:
-            context.roles.append('admin')
+            context.roles = context.roles + ["admin"]
 
         if read_deleted is not None:
             context.read_deleted = read_deleted

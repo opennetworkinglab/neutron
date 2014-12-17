@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,15 +11,14 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
 import sqlalchemy as sa
 
 from neutron.db import api as db
-from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.db import securitygroups_db as sg_db
 from neutron.extensions import securitygroup as ext_sg
+from neutron.i18n import _LW
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.nec.common import config  # noqa
@@ -44,10 +41,6 @@ resource_map = {'ofc_tenant': nmodels.OFCTenantMapping,
 
 def _get_resource_model(resource):
     return resource_map[resource]
-
-
-def clear_db(base=model_base.BASEV2):
-    db.clear_db(base)
 
 
 def get_ofc_item(session, resource, neutron_id):
@@ -107,7 +100,7 @@ def del_ofc_item(session, resource, neutron_id):
             session.delete(item)
         return True
     except sa.orm.exc.NoResultFound:
-        LOG.warning(_("del_ofc_item(): NotFound item "
+        LOG.warning(_LW("del_ofc_item(): NotFound item "
                       "(resource=%(resource)s, id=%(id)s) "),
                     {'resource': resource, 'id': neutron_id})
         return False
@@ -141,7 +134,7 @@ def del_portinfo(session, id):
             portinfo = session.query(nmodels.PortInfo).filter_by(id=id).one()
             session.delete(portinfo)
     except sa.orm.exc.NoResultFound:
-        LOG.warning(_("del_portinfo(): NotFound portinfo for "
+        LOG.warning(_LW("del_portinfo(): NotFound portinfo for "
                       "port_id: %s"), id)
 
 
@@ -162,7 +155,7 @@ def get_active_ports_on_ofc(context, network_id, port_id=None):
 
 def get_port_from_device(port_id):
     """Get port from database."""
-    LOG.debug(_("get_port_with_securitygroups() called:port_id=%s"), port_id)
+    LOG.debug("get_port_with_securitygroups() called:port_id=%s", port_id)
     session = db.get_session()
     sg_binding_port = sg_db.SecurityGroupPortBinding.port_id
 

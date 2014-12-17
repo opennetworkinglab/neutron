@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (C) 2012 Midokura Japan K.K.
 # Copyright (C) 2013 Midokura PTE LTD
 # All Rights Reserved.
@@ -15,8 +13,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Rossella Sblendido, Midokura Japan KK
 
 import mock
 

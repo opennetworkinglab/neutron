@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 VMware, Inc
 # All Rights Reserved.
 #
@@ -28,12 +26,13 @@ from neutron.api.v2 import attributes
 from neutron.common import config
 from neutron import manager
 from neutron.plugins.common import constants
-from neutron.plugins.openvswitch import ovs_neutron_plugin
+from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron import quota
 from neutron.tests import base
 from neutron.tests.unit.extensions import extendedattribute as extattr
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import testlib_api
+from neutron.tests.unit import testlib_plugin
 from neutron import wsgi
 
 _uuid = test_api_v2._uuid
@@ -42,7 +41,7 @@ extensions_path = ':'.join(neutron.tests.unit.extensions.__path__)
 
 
 class ExtensionExtendedAttributeTestPlugin(
-    ovs_neutron_plugin.OVSNeutronPluginV2):
+    ml2_plugin.Ml2Plugin):
 
     supported_extension_aliases = [
         'ext-obj-test', "extended-ext-attr"
@@ -68,7 +67,8 @@ class ExtensionExtendedAttributeTestPlugin(
         return self.objh[id]
 
 
-class ExtensionExtendedAttributeTestCase(base.BaseTestCase):
+class ExtensionExtendedAttributeTestCase(base.BaseTestCase,
+                                         testlib_plugin.PluginSetupHelper):
     def setUp(self):
         super(ExtensionExtendedAttributeTestCase, self).setUp()
         plugin = (

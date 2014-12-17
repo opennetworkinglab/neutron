@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013, NEC Corporation
 # All Rights Reserved.
 #
@@ -22,7 +20,6 @@ import mock
 from neutron.api.v2 import attributes
 from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
-from neutron.plugins.nec.db import api as ndb  # noqa
 from neutron.tests.unit.nec import test_nec_plugin
 from neutron.tests.unit import test_extension_security_group as test_sg
 from neutron.tests.unit import test_security_groups_rpc as test_sg_rpc
@@ -54,13 +51,7 @@ class NecSecurityGroupsTestCase(test_sg.SecurityGroupDBTestCase):
 
 
 class TestNecSGServerRpcCallBack(
-    test_sg_rpc.SGServerRpcCallBackMixinTestCase,
-    NecSecurityGroupsTestCase):
-    pass
-
-
-class TestNecSGServerRpcCallBackXML(
-    test_sg_rpc.SGServerRpcCallBackMixinTestCaseXML,
+    test_sg_rpc.SGServerRpcCallBackTestCase,
     NecSecurityGroupsTestCase):
     pass
 
@@ -87,7 +78,7 @@ class TestNecSecurityGroups(NecSecurityGroupsTestCase,
                                        req.get_response(self.api))
 
                 plugin = manager.NeutronManager.get_plugin()
-                port_dict = plugin.callback_sg.get_port_from_device(port_id)
+                port_dict = plugin.get_port_from_device(port_id)
                 self.assertEqual(port_id, port_dict['id'])
                 self.assertEqual([sg_id],
                                  port_dict[ext_sg.SECURITYGROUPS])
@@ -95,7 +86,3 @@ class TestNecSecurityGroups(NecSecurityGroupsTestCase,
                 self.assertEqual([fixed_ips[0]['ip_address']],
                                  port_dict['fixed_ips'])
                 self._delete('ports', port_id)
-
-
-class TestNecSecurityGroupsXML(TestNecSecurityGroups):
-    fmt = 'xml'

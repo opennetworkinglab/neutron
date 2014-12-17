@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (C) 2012 Midokura Japan K.K.
 # Copyright (C) 2013 Midokura PTE LTD
 # All Rights Reserved.
@@ -15,10 +13,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Rossella Sblendido, Midokura Europe SARL
-# @author: Ryu Ishimoto, Midokura Japan KK
-# @author: Tomoe Sugihara, Midokura Japan KK
 
 import mock
 import os
@@ -55,12 +49,27 @@ class MidonetPluginV2TestCase(test_plugin.NeutronDbPluginV2TestCase):
         self.instance = self.mock_api.start()
         mock_cfg = mock_lib.MidonetLibMockConfig(self.instance.return_value)
         mock_cfg.setup()
-        super(MidonetPluginV2TestCase, self).setUp(plugin=plugin,
-                                                   ext_mgr=ext_mgr)
 
-    def tearDown(self):
-        super(MidonetPluginV2TestCase, self).tearDown()
-        self.mock_api.stop()
+        self.midoclient_mock = mock.MagicMock()
+        self.midoclient_mock.midonetclient.neutron.client.return_value = True
+        modules = {
+            'midonetclient': self.midoclient_mock,
+            'midonetclient.neutron': self.midoclient_mock.neutron,
+            'midonetclient.neutron.client': self.midoclient_mock.client,
+        }
+
+        self.module_patcher = mock.patch.dict('sys.modules', modules)
+        self.module_patcher.start()
+        self.addCleanup(self.module_patcher.stop)
+
+        # import midonetclient here because it needs proper mock objects to be
+        # assigned to this module first.  'midoclient_mock' object is the
+        # mock object used for this module.
+        from midonetclient.neutron.client import MidonetClient
+        client_class = MidonetClient
+        self.mock_class = client_class()
+
+        super(MidonetPluginV2TestCase, self).setUp(plugin=plugin)
 
 
 class TestMidonetNetworksV2(test_plugin.TestNetworksV2,
@@ -133,6 +142,9 @@ class TestMidonetL3NatTestCase(MidonetPluginV2TestCase,
                                                   None)
         self.assertTrue(self.instance.return_value.add_static_nat.called)
 
+    def test_delete_ext_net_with_disassociated_floating_ips(self):
+        pass
+
 
 class TestMidonetSecurityGroupsTestCase(sg.SecurityGroupDBTestCase):
 
@@ -152,6 +164,25 @@ class TestMidonetSecurityGroupsTestCase(sg.SecurityGroupDBTestCase):
         p.start()
         # dict patches must be explicitly stopped
         self.addCleanup(p.stop)
+        self.midoclient_mock = mock.MagicMock()
+        self.midoclient_mock.midonetclient.neutron.client.return_value = True
+        modules = {
+            'midonetclient': self.midoclient_mock,
+            'midonetclient.neutron': self.midoclient_mock.neutron,
+            'midonetclient.neutron.client': self.midoclient_mock.client,
+        }
+
+        self.module_patcher = mock.patch.dict('sys.modules', modules)
+        self.module_patcher.start()
+        self.addCleanup(self.module_patcher.stop)
+
+        # import midonetclient here because it needs proper mock objects to be
+        # assigned to this module first.  'midoclient_mock' object is the
+        # mock object used for this module.
+        from midonetclient.neutron.client import MidonetClient
+        client_class = MidonetClient
+        self.mock_class = client_class()
+
         super(TestMidonetSecurityGroupsTestCase, self).setUp(self._plugin_name)
 
 

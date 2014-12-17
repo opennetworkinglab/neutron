@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 Intel Corporation.
 # All Rights Reserved.
 #
@@ -14,18 +12,15 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Zhongyue Luo, Intel Corporation.
-#
 
 import mock
+from oslo import i18n
 from webob import exc
 import webtest
 
 from neutron.api.v2 import resource as wsgi_resource
 from neutron.common import exceptions as n_exc
 from neutron import context
-from neutron.openstack.common import gettextutils
 from neutron.tests import base
 from neutron import wsgi
 
@@ -47,16 +42,15 @@ class RequestTestCase(base.BaseTestCase):
         self.assertEqual(result, "application/json")
 
     def test_content_type_from_accept(self):
-        for content_type in ('application/xml',
-                             'application/json'):
-            request = wsgi.Request.blank('/tests/123')
-            request.headers["Accept"] = content_type
-            result = request.best_match_content_type()
-            self.assertEqual(result, content_type)
+        content_type = 'application/json'
+        request = wsgi.Request.blank('/tests/123')
+        request.headers["Accept"] = content_type
+        result = request.best_match_content_type()
+        self.assertEqual(result, content_type)
 
     def test_content_type_from_accept_best(self):
         request = wsgi.Request.blank('/tests/123')
-        request.headers["Accept"] = "application/xml, application/json"
+        request.headers["Accept"] = "application/json"
         result = request.best_match_content_type()
         self.assertEqual(result, "application/json")
 
@@ -64,13 +58,9 @@ class RequestTestCase(base.BaseTestCase):
         request.headers["Accept"] = ("application/json; q=0.3, "
                                      "application/xml; q=0.9")
         result = request.best_match_content_type()
-        self.assertEqual(result, "application/xml")
+        self.assertEqual(result, "application/json")
 
     def test_content_type_from_query_extension(self):
-        request = wsgi.Request.blank('/tests/123.xml')
-        result = request.best_match_content_type()
-        self.assertEqual(result, "application/xml")
-
         request = wsgi.Request.blank('/tests/123.json')
         result = request.best_match_content_type()
         self.assertEqual(result, "application/json")
@@ -80,10 +70,10 @@ class RequestTestCase(base.BaseTestCase):
         self.assertEqual(result, "application/json")
 
     def test_content_type_accept_and_query_extension(self):
-        request = wsgi.Request.blank('/tests/123.xml')
-        request.headers["Accept"] = "application/json"
+        request = wsgi.Request.blank('/tests/123.json')
+        request.headers["Accept"] = "application/xml"
         result = request.best_match_content_type()
-        self.assertEqual(result, "application/xml")
+        self.assertEqual(result, "application/json")
 
     def test_content_type_accept_default(self):
         request = wsgi.Request.blank('/tests/123.unsupported')
@@ -99,12 +89,22 @@ class RequestTestCase(base.BaseTestCase):
     def test_context_without_neutron_context(self):
         self.assertTrue(self.req.context.is_admin)
 
+    def test_request_context_elevated(self):
+        user_context = context.Context(
+            'fake_user', 'fake_project', admin=False)
+        self.assertFalse(user_context.is_admin)
+        admin_context = user_context.elevated()
+        self.assertFalse(user_context.is_admin)
+        self.assertTrue(admin_context.is_admin)
+        self.assertNotIn('admin', user_context.roles)
+        self.assertIn('admin', admin_context.roles)
+
     def test_best_match_language(self):
         # Test that we are actually invoking language negotiation by webop
         request = wsgi.Request.blank('/')
-        gettextutils.get_available_languages = mock.MagicMock()
-        gettextutils.get_available_languages.return_value = ['known-language',
-                                                             'es', 'zh']
+        i18n.get_available_languages = mock.MagicMock()
+        i18n.get_available_languages.return_value = ['known-language',
+                                                     'es', 'zh']
         request.headers['Accept-Language'] = 'known-language'
         language = request.best_match_language()
         self.assertEqual(language, 'known-language')
@@ -123,6 +123,10 @@ class RequestTestCase(base.BaseTestCase):
 
 
 class ResourceTestCase(base.BaseTestCase):
+
+    @staticmethod
+    def _get_deserializer(req_format):
+        return wsgi.JSONDeserializer()
 
     def test_unmapped_neutron_error_with_json(self):
         msg = u'\u7f51\u7edc'
@@ -146,31 +150,8 @@ class ResourceTestCase(base.BaseTestCase):
         self.assertEqual(wsgi.JSONDeserializer().deserialize(res.body),
                          expected_res)
 
-    def test_unmapped_neutron_error_with_xml(self):
-        msg = u'\u7f51\u7edc'
-
-        class TestException(n_exc.NeutronException):
-            message = msg
-        expected_res = {'body': {
-            'NeutronError': {
-                'type': 'TestException',
-                'message': msg,
-                'detail': ''}}}
-        controller = mock.MagicMock()
-        controller.test.side_effect = TestException()
-
-        resource = webtest.TestApp(wsgi_resource.Resource(controller))
-
-        environ = {'wsgiorg.routing_args': (None, {'action': 'test',
-                                                   'format': 'xml'})}
-        res = resource.get('', extra_environ=environ, expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPInternalServerError.code)
-        self.assertEqual(wsgi.XMLDeserializer().deserialize(res.body),
-                         expected_res)
-
-    @mock.patch('neutron.openstack.common.gettextutils.translate')
+    @mock.patch('oslo.i18n.translate')
     def test_unmapped_neutron_error_localized(self, mock_translation):
-        gettextutils.install('blaa', lazy=True)
         msg_translation = 'Translated error'
         mock_translation.return_value = msg_translation
         msg = _('Unmapped error')
@@ -214,33 +195,8 @@ class ResourceTestCase(base.BaseTestCase):
         self.assertEqual(wsgi.JSONDeserializer().deserialize(res.body),
                          expected_res)
 
-    def test_mapped_neutron_error_with_xml(self):
-        msg = u'\u7f51\u7edc'
-
-        class TestException(n_exc.NeutronException):
-            message = msg
-        expected_res = {'body': {
-            'NeutronError': {
-                'type': 'TestException',
-                'message': msg,
-                'detail': ''}}}
-        controller = mock.MagicMock()
-        controller.test.side_effect = TestException()
-
-        faults = {TestException: exc.HTTPGatewayTimeout}
-        resource = webtest.TestApp(wsgi_resource.Resource(controller,
-                                                          faults=faults))
-
-        environ = {'wsgiorg.routing_args': (None, {'action': 'test',
-                                                   'format': 'xml'})}
-        res = resource.get('', extra_environ=environ, expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPGatewayTimeout.code)
-        self.assertEqual(wsgi.XMLDeserializer().deserialize(res.body),
-                         expected_res)
-
-    @mock.patch('neutron.openstack.common.gettextutils.translate')
+    @mock.patch('oslo.i18n.translate')
     def test_mapped_neutron_error_localized(self, mock_translation):
-        gettextutils.install('blaa', lazy=True)
         msg_translation = 'Translated error'
         mock_translation.return_value = msg_translation
         msg = _('Unmapped error')
@@ -262,47 +218,68 @@ class ResourceTestCase(base.BaseTestCase):
         self.assertIn(msg_translation,
                       str(wsgi.JSONDeserializer().deserialize(res.body)))
 
-    def test_http_error(self):
+    @staticmethod
+    def _make_request_with_side_effect(side_effect, req_format=None):
         controller = mock.MagicMock()
-        controller.test.side_effect = exc.HTTPGatewayTimeout()
+        controller.test.side_effect = side_effect
 
         resource = webtest.TestApp(wsgi_resource.Resource(controller))
 
-        environ = {'wsgiorg.routing_args': (None, {'action': 'test'})}
+        routing_args = {'action': 'test'}
+        if req_format:
+            routing_args.update({'format': req_format})
+        environ = {'wsgiorg.routing_args': (None, routing_args)}
         res = resource.get('', extra_environ=environ, expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPGatewayTimeout.code)
+        return res
+
+    def test_http_error(self):
+        res = self._make_request_with_side_effect(exc.HTTPGatewayTimeout())
+
+        # verify that the exception structure is the one expected
+        # by the python-neutronclient
+        self.assertEqual(exc.HTTPGatewayTimeout().explanation,
+                         res.json['NeutronError']['message'])
+        self.assertEqual('HTTPGatewayTimeout',
+                         res.json['NeutronError']['type'])
+        self.assertEqual('', res.json['NeutronError']['detail'])
+        self.assertEqual(exc.HTTPGatewayTimeout.code, res.status_int)
+
+    def _test_unhandled_error(self, req_format='json'):
+        expected_res = {'body': {'NeutronError':
+                                {'detail': '',
+                                 'message': _(
+                                     'Request Failed: internal server '
+                                     'error while processing your request.'),
+                                 'type': 'HTTPInternalServerError'}}}
+        res = self._make_request_with_side_effect(side_effect=Exception(),
+                                 req_format=req_format)
+        self.assertEqual(exc.HTTPInternalServerError.code,
+                         res.status_int)
+        self.assertEqual(expected_res,
+                         self._get_deserializer(
+                             req_format).deserialize(res.body))
 
     def test_unhandled_error_with_json(self):
+        self._test_unhandled_error()
+
+    def _test_not_implemented_error(self, req_format='json'):
         expected_res = {'body': {'NeutronError':
-                                 _('Request Failed: internal server error '
-                                   'while processing your request.')}}
-        controller = mock.MagicMock()
-        controller.test.side_effect = Exception()
+                                {'detail': '',
+                                 'message': _(
+                                     'The server has either erred or is '
+                                     'incapable of performing the requested '
+                                     'operation.'),
+                                 'type': 'HTTPNotImplemented'}}}
 
-        resource = webtest.TestApp(wsgi_resource.Resource(controller))
+        res = self._make_request_with_side_effect(exc.HTTPNotImplemented(),
+                                 req_format=req_format)
+        self.assertEqual(exc.HTTPNotImplemented.code, res.status_int)
+        self.assertEqual(expected_res,
+                         self._get_deserializer(
+                             req_format).deserialize(res.body))
 
-        environ = {'wsgiorg.routing_args': (None, {'action': 'test',
-                                                   'format': 'json'})}
-        res = resource.get('', extra_environ=environ, expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPInternalServerError.code)
-        self.assertEqual(wsgi.JSONDeserializer().deserialize(res.body),
-                         expected_res)
-
-    def test_unhandled_error_with_xml(self):
-        expected_res = {'body': {'NeutronError':
-                                 _('Request Failed: internal server error '
-                                   'while processing your request.')}}
-        controller = mock.MagicMock()
-        controller.test.side_effect = Exception()
-
-        resource = webtest.TestApp(wsgi_resource.Resource(controller))
-
-        environ = {'wsgiorg.routing_args': (None, {'action': 'test',
-                                                   'format': 'xml'})}
-        res = resource.get('', extra_environ=environ, expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPInternalServerError.code)
-        self.assertEqual(wsgi.XMLDeserializer().deserialize(res.body),
-                         expected_res)
+    def test_not_implemented_error_with_json(self):
+        self._test_not_implemented_error()
 
     def test_status_200(self):
         controller = mock.MagicMock()

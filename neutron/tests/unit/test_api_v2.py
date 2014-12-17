@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -33,13 +31,14 @@ from neutron.api.v2 import router
 from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron import manager
-from neutron.openstack.common.notifier import api as notifer_api
 from neutron.openstack.common import policy as common_policy
 from neutron.openstack.common import uuidutils
 from neutron import policy
 from neutron import quota
 from neutron.tests import base
+from neutron.tests import fake_notifier
 from neutron.tests.unit import testlib_api
+from neutron.tests.unit import testlib_plugin
 
 
 ROOTDIR = os.path.dirname(os.path.dirname(__file__))
@@ -88,7 +87,7 @@ class ResourceIndexTestCase(base.BaseTestCase):
         self.assertEqual(link['rel'], 'self')
 
 
-class APIv2TestBase(base.BaseTestCase):
+class APIv2TestBase(base.BaseTestCase, testlib_plugin.PluginSetupHelper):
     def setUp(self):
         super(APIv2TestBase, self).setUp()
 
@@ -134,8 +133,10 @@ class APIv2TestCase(APIv2TestBase):
     def _do_field_list(self, resource, base_fields):
         attr_info = attributes.RESOURCE_ATTRIBUTE_MAP[resource]
         policy_attrs = [name for (name, info) in attr_info.items()
-                        if info.get('required_by_policy') or
-                        info.get('primary_key')]
+                        if info.get('required_by_policy')]
+        for name, info in attr_info.items():
+            if info.get('primary_key'):
+                policy_attrs.append(name)
         fields = base_fields
         fields.extend(policy_attrs)
         return fields
@@ -143,8 +144,8 @@ class APIv2TestCase(APIv2TestBase):
     def _get_collection_kwargs(self, skipargs=[], **kwargs):
         args_list = ['filters', 'fields', 'sorts', 'limit', 'marker',
                      'page_reverse']
-        args_dict = dict((arg, mock.ANY)
-                         for arg in set(args_list) - set(skipargs))
+        args_dict = dict(
+            (arg, mock.ANY) for arg in set(args_list) - set(skipargs))
         args_dict.update(kwargs)
         return args_dict
 
@@ -367,18 +368,20 @@ class APIv2TestCase(APIv2TestBase):
         calls = []
         instance = self.plugin.return_value
         instance.get_networks.return_value = []
+
         self.api.get(_get_path('networks'),
                      {'page_reverse': 'True'})
         kwargs = self._get_collection_kwargs(page_reverse=True)
         calls.append(mock.call.get_networks(mock.ANY, **kwargs))
         instance.get_networks.assert_called_once_with(mock.ANY, **kwargs)
 
-        instance = self.plugin.return_value
-        instance.get_networks.return_value = []
+        instance.get_networks.reset_mock()
+
         self.api.get(_get_path('networks'),
                      {'page_reverse': 'False'})
         kwargs = self._get_collection_kwargs(page_reverse=False)
         calls.append(mock.call.get_networks(mock.ANY, **kwargs))
+        instance.get_networks.assert_called_once_with(mock.ANY, **kwargs)
 
     def test_page_reverse_with_non_bool(self):
         instance = self.plugin.return_value
@@ -789,11 +792,7 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
 
     def test_create_no_keystone_env(self):
         data = {'name': 'net1'}
-        res = self.api.post(_get_path('networks', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPBadRequest.code)
+        self._test_create_failure_bad_request('networks', data)
 
     def test_create_with_keystone_env(self):
         tenant_id = _uuid()
@@ -825,45 +824,25 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
         tenant_id = _uuid()
         data = {'network': {'name': 'net1', 'tenant_id': tenant_id}}
         env = {'neutron.context': context.Context('', tenant_id + "bad")}
-        res = self.api.post(_get_path('networks', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True,
-                            extra_environ=env)
-        self.assertEqual(res.status_int, exc.HTTPBadRequest.code)
+        self._test_create_failure_bad_request('networks', data,
+                                              extra_environ=env)
 
     def test_create_no_body(self):
         data = {'whoa': None}
-        res = self.api.post(_get_path('networks', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPBadRequest.code)
+        self._test_create_failure_bad_request('networks', data)
 
     def test_create_no_resource(self):
         data = {}
-        res = self.api.post(_get_path('networks', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True)
-        self.assertEqual(res.status_int, exc.HTTPBadRequest.code)
+        self._test_create_failure_bad_request('networks', data)
 
     def test_create_missing_attr(self):
         data = {'port': {'what': 'who', 'tenant_id': _uuid()}}
-        res = self.api.post(_get_path('ports', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True)
-        self.assertEqual(res.status_int, 400)
+        self._test_create_failure_bad_request('ports', data)
 
     def test_create_readonly_attr(self):
         data = {'network': {'name': 'net1', 'tenant_id': _uuid(),
                             'status': "ACTIVE"}}
-        res = self.api.post(_get_path('networks', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True)
-        self.assertEqual(res.status_int, 400)
+        self._test_create_failure_bad_request('networks', data)
 
     def test_create_bulk(self):
         data = {'networks': [{'name': 'net1',
@@ -886,31 +865,28 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
                             content_type='application/' + self.fmt)
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
 
-    def test_create_bulk_no_networks(self):
-        data = {'networks': []}
-        res = self.api.post(_get_path('networks', fmt=self.fmt),
+    def _test_create_failure_bad_request(self, resource, data, **kwargs):
+        res = self.api.post(_get_path(resource, fmt=self.fmt),
                             self.serialize(data),
                             content_type='application/' + self.fmt,
-                            expect_errors=True)
+                            expect_errors=True, **kwargs)
         self.assertEqual(res.status_int, exc.HTTPBadRequest.code)
+
+    def test_create_bulk_networks_none(self):
+        self._test_create_failure_bad_request('networks', {'networks': None})
+
+    def test_create_bulk_networks_empty_list(self):
+        self._test_create_failure_bad_request('networks', {'networks': []})
 
     def test_create_bulk_missing_attr(self):
         data = {'ports': [{'what': 'who', 'tenant_id': _uuid()}]}
-        res = self.api.post(_get_path('ports', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True)
-        self.assertEqual(res.status_int, 400)
+        self._test_create_failure_bad_request('ports', data)
 
     def test_create_bulk_partial_body(self):
         data = {'ports': [{'device_id': 'device_1',
                            'tenant_id': _uuid()},
                           {'tenant_id': _uuid()}]}
-        res = self.api.post(_get_path('ports', fmt=self.fmt),
-                            self.serialize(data),
-                            content_type='application/' + self.fmt,
-                            expect_errors=True)
-        self.assertEqual(res.status_int, 400)
+        self._test_create_failure_bad_request('ports', data)
 
     def test_create_attr_not_specified(self):
         net_id = _uuid()
@@ -1052,14 +1028,13 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
         tenant_id = _uuid()
         # Inject rule in policy engine
         policy.init()
-        common_policy._rules['get_network:name'] = common_policy.parse_rule(
-            "rule:admin_only")
+        self.addCleanup(policy.reset)
+        rules = {'get_network:name': common_policy.parse_rule(
+            "rule:admin_only")}
+        policy.set_rules(rules, overwrite=False)
         res = self._test_get(tenant_id, tenant_id, 200)
         res = self.deserialize(res)
-        try:
-            self.assertNotIn('name', res['network'])
-        finally:
-            del common_policy._rules['get_network:name']
+        self.assertNotIn('name', res['network'])
 
     def _test_update(self, req_tenant_id, real_tenant_id, expected_code,
                      expect_errors=False):
@@ -1117,7 +1092,7 @@ class JSONV2TestCase(APIv2TestBase, testlib_api.WebTestCase):
         self.assertEqual(res.status_int, 400)
 
 
-class SubresourceTest(base.BaseTestCase):
+class SubresourceTest(base.BaseTestCase, testlib_plugin.PluginSetupHelper):
     def setUp(self):
         super(SubresourceTest, self).setUp()
 
@@ -1198,6 +1173,18 @@ class SubresourceTest(base.BaseTestCase):
                                                               network_id='id1',
                                                               dummy=body)
 
+    def test_update_subresource_to_none(self):
+        instance = self.plugin.return_value
+
+        dummy_id = _uuid()
+        body = {'dummy': {}}
+        self.api.put_json('/networks/id1' + _get_path('dummies', id=dummy_id),
+                          body)
+        instance.update_network_dummy.assert_called_once_with(mock.ANY,
+                                                              dummy_id,
+                                                              network_id='id1',
+                                                              dummy=body)
+
     def test_delete_sub_resource(self):
         instance = self.plugin.return_value
 
@@ -1210,10 +1197,6 @@ class SubresourceTest(base.BaseTestCase):
 
 # Note: since all resources use the same controller and validation
 # logic, we actually get really good coverage from testing just networks.
-class XMLV2TestCase(JSONV2TestCase):
-    fmt = 'xml'
-
-
 class V2Views(base.BaseTestCase):
     def _view(self, keys, collection, resource):
         data = dict((key, 'value') for key in keys)
@@ -1242,41 +1225,42 @@ class V2Views(base.BaseTestCase):
 
 
 class NotificationTest(APIv2TestBase):
-    def _resource_op_notifier(self, opname, resource, expected_errors=False,
-                              notification_level='INFO'):
+
+    def setUp(self):
+        super(NotificationTest, self).setUp()
+        fake_notifier.reset()
+
+    def _resource_op_notifier(self, opname, resource, expected_errors=False):
         initial_input = {resource: {'name': 'myname'}}
         instance = self.plugin.return_value
         instance.get_networks.return_value = initial_input
         instance.get_networks_count.return_value = 0
         expected_code = exc.HTTPCreated.code
-        with mock.patch.object(notifer_api, 'notify') as mynotifier:
-            if opname == 'create':
-                initial_input[resource]['tenant_id'] = _uuid()
-                res = self.api.post_json(
-                    _get_path('networks'),
-                    initial_input, expect_errors=expected_errors)
-            if opname == 'update':
-                res = self.api.put_json(
-                    _get_path('networks', id=_uuid()),
-                    initial_input, expect_errors=expected_errors)
-                expected_code = exc.HTTPOk.code
-            if opname == 'delete':
-                initial_input[resource]['tenant_id'] = _uuid()
-                res = self.api.delete(
-                    _get_path('networks', id=_uuid()),
-                    expect_errors=expected_errors)
-                expected_code = exc.HTTPNoContent.code
-            expected = [mock.call(mock.ANY,
-                                  'network.' + cfg.CONF.host,
-                                  resource + "." + opname + ".start",
-                                  notification_level,
-                                  mock.ANY),
-                        mock.call(mock.ANY,
-                                  'network.' + cfg.CONF.host,
-                                  resource + "." + opname + ".end",
-                                  notification_level,
-                                  mock.ANY)]
-            self.assertEqual(expected, mynotifier.call_args_list)
+        if opname == 'create':
+            initial_input[resource]['tenant_id'] = _uuid()
+            res = self.api.post_json(
+                _get_path('networks'),
+                initial_input, expect_errors=expected_errors)
+        if opname == 'update':
+            res = self.api.put_json(
+                _get_path('networks', id=_uuid()),
+                initial_input, expect_errors=expected_errors)
+            expected_code = exc.HTTPOk.code
+        if opname == 'delete':
+            initial_input[resource]['tenant_id'] = _uuid()
+            res = self.api.delete(
+                _get_path('networks', id=_uuid()),
+                expect_errors=expected_errors)
+            expected_code = exc.HTTPNoContent.code
+
+        expected_events = ('.'.join([resource, opname, "start"]),
+                           '.'.join([resource, opname, "end"]))
+        self.assertEqual(len(fake_notifier.NOTIFICATIONS),
+                         len(expected_events))
+        for msg, event in zip(fake_notifier.NOTIFICATIONS, expected_events):
+            self.assertEqual('INFO', msg['priority'])
+            self.assertEqual(event, msg['event_type'])
+
         self.assertEqual(res.status_int, expected_code)
 
     def test_network_create_notifer(self):
@@ -1287,11 +1271,6 @@ class NotificationTest(APIv2TestBase):
 
     def test_network_update_notifer(self):
         self._resource_op_notifier('update', 'network')
-
-    def test_network_create_notifer_with_log_level(self):
-        cfg.CONF.set_override('default_notification_level', 'DEBUG')
-        self._resource_op_notifier('create', 'network',
-                                   notification_level='DEBUG')
 
 
 class DHCPNotificationTest(APIv2TestBase):
@@ -1388,7 +1367,7 @@ class QuotaTest(APIv2TestBase):
         self.assertEqual(res.status_int, exc.HTTPCreated.code)
 
 
-class ExtensionTestCase(base.BaseTestCase):
+class ExtensionTestCase(base.BaseTestCase, testlib_plugin.PluginSetupHelper):
     def setUp(self):
         super(ExtensionTestCase, self).setUp()
         plugin = 'neutron.neutron_plugin_base_v2.NeutronPluginBaseV2'
@@ -1459,22 +1438,22 @@ class ExtensionTestCase(base.BaseTestCase):
 
 
 class TestSubresourcePlugin():
-        def get_network_dummies(self, context, network_id,
-                                filters=None, fields=None):
-            return []
+    def get_network_dummies(self, context, network_id,
+                            filters=None, fields=None):
+        return []
 
-        def get_network_dummy(self, context, id, network_id,
-                              fields=None):
-            return {}
+    def get_network_dummy(self, context, id, network_id,
+                          fields=None):
+        return {}
 
-        def create_network_dummy(self, context, network_id, dummy):
-            return {}
+    def create_network_dummy(self, context, network_id, dummy):
+        return {}
 
-        def update_network_dummy(self, context, id, network_id, dummy):
-            return {}
+    def update_network_dummy(self, context, id, network_id, dummy):
+        return {}
 
-        def delete_network_dummy(self, context, id, network_id):
-            return
+    def delete_network_dummy(self, context, id, network_id):
+        return
 
 
 class ListArgsTestCase(base.BaseTestCase):
@@ -1528,7 +1507,7 @@ class FiltersTestCase(base.BaseTestCase):
         }
         expect_val = {'foo': {'key': ['2', '4']}, 'bar': ['3'], 'qux': ['1']}
         actual_val = api_common.get_filters(request, attr_info)
-        self.assertEqual(actual_val, expect_val)
+        self.assertOrderedEqual(expect_val, actual_val)
 
     def test_attr_info_with_convert_to(self):
         path = '/?foo=4&bar=3&baz=2&qux=1'

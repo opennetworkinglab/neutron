@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -15,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import string
 import testtools
 
 from neutron.api.v2 import attributes
@@ -123,6 +122,14 @@ class TestAttributes(base.BaseTestCase):
                           attributes._validate_no_whitespace,
                           'i\thave\twhitespace')
 
+        for ws in string.whitespace:
+            self.assertRaises(n_exc.InvalidInput,
+                              attributes._validate_no_whitespace,
+                              '%swhitespace-at-head' % ws)
+            self.assertRaises(n_exc.InvalidInput,
+                              attributes._validate_no_whitespace,
+                              'whitespace-at-tail%s' % ws)
+
     def test_validate_range(self):
         msg = attributes._validate_range(1, [1, 9])
         self.assertIsNone(msg)
@@ -190,6 +197,10 @@ class TestAttributes(base.BaseTestCase):
         else:
             self.assertEqual(msg, err_msg % mac_addr)
 
+        mac_addr = "ff:16:3e:4f:00:00\r"
+        msg = validator(mac_addr)
+        self.assertEqual(msg, err_msg % mac_addr)
+
     def test_validate_mac_address(self):
         self._test_validate_mac_address(attributes._validate_mac_address)
 
@@ -218,6 +229,16 @@ class TestAttributes(base.BaseTestCase):
         msg = attributes._validate_ip_address(ip_addr)
         self.assertEqual(msg, "'%s' is not a valid IP address" % ip_addr)
 
+        for ws in string.whitespace:
+            ip_addr = '%s111.1.1.1' % ws
+            msg = attributes._validate_ip_address(ip_addr)
+            self.assertEqual(msg, "'%s' is not a valid IP address" % ip_addr)
+
+        for ws in string.whitespace:
+            ip_addr = '111.1.1.1%s' % ws
+            msg = attributes._validate_ip_address(ip_addr)
+            self.assertEqual(msg, "'%s' is not a valid IP address" % ip_addr)
+
     def test_validate_ip_pools(self):
         pools = [[{'end': '10.0.0.254'}],
                  [{'start': '10.0.0.254'}],
@@ -239,6 +260,13 @@ class TestAttributes(base.BaseTestCase):
         for pool in pools:
             msg = attributes._validate_ip_pools(pool)
             self.assertIsNone(msg)
+
+        invalid_ip = '10.0.0.2\r'
+        pools = [[{'end': '10.0.0.254', 'start': invalid_ip}]]
+        for pool in pools:
+            msg = attributes._validate_ip_pools(pool)
+            self.assertEqual(msg,
+                             "'%s' is not a valid IP address" % invalid_ip)
 
     def test_validate_fixed_ips(self):
         fixed_ips = [
@@ -281,7 +309,6 @@ class TestAttributes(base.BaseTestCase):
     def test_validate_nameservers(self):
         ns_pools = [['1.1.1.2', '1.1.1.2'],
                     ['www.hostname.com', 'www.hostname.com'],
-                    ['77.hostname.com'],
                     ['1000.0.0.1'],
                     None]
 
@@ -293,6 +320,8 @@ class TestAttributes(base.BaseTestCase):
                     ['www.hostname.com'],
                     ['www.great.marathons.to.travel'],
                     ['valid'],
+                    ['77.hostname.com'],
+                    ['1' * 59],
                     ['www.internal.hostname.com']]
 
         for ns in ns_pools:
@@ -343,13 +372,19 @@ class TestAttributes(base.BaseTestCase):
         self.assertEqual(msg, "'%s' is not a valid IP address" % ip_addr)
 
     def test_hostname_pattern(self):
-        data = '@openstack'
-        msg = attributes._validate_regex(data, attributes.HOSTNAME_PATTERN)
-        self.assertIsNotNone(msg)
+        bad_values = ['@openstack', 'ffff.abcdefg' * 26, 'f' * 80, '-hello',
+                      'goodbye-', 'example..org']
+        for data in bad_values:
+            msg = attributes._validate_hostname(data)
+            self.assertIsNotNone(msg)
 
-        data = 'www.openstack.org'
-        msg = attributes._validate_regex(data, attributes.HOSTNAME_PATTERN)
-        self.assertIsNone(msg)
+        # All numeric hostnames are allowed per RFC 1123 section 2.1
+        good_values = ['www.openstack.org', '1234x', '1234',
+                       'openstack-1', 'v.xyz', '1' * 50, 'a1a',
+                       'x.x1x', 'x.yz', 'example.org.']
+        for data in good_values:
+            msg = attributes._validate_hostname(data)
+            self.assertIsNone(msg)
 
     def test_uuid_pattern(self):
         data = 'garbage'
@@ -499,6 +534,12 @@ class TestAttributes(base.BaseTestCase):
         else:
             error = "'%s' is not a valid IP subnet" % cidr
             self.assertEqual(msg, error)
+
+        # Invalid - IPv4 with trailing CR
+        cidr = "10.0.2.0/24\r"
+        msg = validator(cidr, None)
+        error = "'%s' is not a valid IP subnet" % cidr
+        self.assertEqual(msg, error)
 
     def test_validate_subnet(self):
         self._test_validate_subnet(attributes._validate_subnet)

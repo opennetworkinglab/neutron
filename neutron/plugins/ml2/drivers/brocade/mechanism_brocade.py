@@ -12,17 +12,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# Author:
-# Shiv Haris (shivharis@hotmail.com)
 
 
 """Implentation of Brocade ML2 Mechanism driver for ML2 Plugin."""
 
 from oslo.config import cfg
+from oslo.utils import importutils
 
-from neutron.openstack.common import importutils
+from neutron.i18n import _LE, _LI
 from neutron.openstack.common import log as logging
+from neutron.plugins.ml2 import driver_api
 from neutron.plugins.ml2.drivers.brocade.db import models as brocade_db
 
 LOG = logging.getLogger(__name__)
@@ -38,13 +37,15 @@ ML2_BROCADE = [cfg.StrOpt('address', default='',
                cfg.StrOpt('physical_networks', default='',
                           help=_('Allowed physical networks')),
                cfg.StrOpt('ostype', default='NOS',
-                          help=_('Unused'))
+                          help=_('OS Type of the switch')),
+               cfg.StrOpt('osversion', default='4.0.0',
+                          help=_('OS Version number'))
                ]
 
 cfg.CONF.register_opts(ML2_BROCADE, "ml2_brocade")
 
 
-class BrocadeMechanism():
+class BrocadeMechanism(driver_api.MechanismDriver):
     """ML2 Mechanism driver for Brocade VDX switches. This is the upper
     layer driver class that interfaces to lower layer (NETCONF) below.
 
@@ -65,11 +66,51 @@ class BrocadeMechanism():
     def brocade_init(self):
         """Brocade specific initialization for this class."""
 
-        self._switch = {'address': cfg.CONF.ml2_brocade.address,
-                        'username': cfg.CONF.ml2_brocade.username,
-                        'password': cfg.CONF.ml2_brocade.password
-                        }
+        osversion = None
+        self._switch = {
+            'address': cfg.CONF.ml2_brocade.address,
+            'username': cfg.CONF.ml2_brocade.username,
+            'password': cfg.CONF.ml2_brocade.password,
+            'ostype': cfg.CONF.ml2_brocade.ostype,
+            'osversion': cfg.CONF.ml2_brocade.osversion}
+
         self._driver = importutils.import_object(NOS_DRIVER)
+
+        # Detect version of NOS on the switch
+        osversion = self._switch['osversion']
+        if osversion == "autodetect":
+            osversion = self._driver.get_nos_version(
+                self._switch['address'],
+                self._switch['username'],
+                self._switch['password'])
+
+        virtual_fabric_enabled = self._driver.is_virtual_fabric_enabled(
+                self._switch['address'],
+                self._switch['username'],
+                self._switch['password'])
+
+        if virtual_fabric_enabled:
+            LOG.debug("Virtual Fabric: enabled")
+        else:
+            LOG.debug("Virtual Fabric: not enabled")
+
+        self.set_features_enabled(osversion, virtual_fabric_enabled)
+
+    def set_features_enabled(self, nos_version, virtual_fabric_enabled):
+        self._virtual_fabric_enabled = virtual_fabric_enabled
+        version = nos_version.split(".", 2)
+
+        # Starting 4.1.0 port profile domains are supported
+        if int(version[0]) >= 5 or (int(version[0]) >= 4
+                                    and int(version[1]) >= 1):
+            self._pp_domains_supported = True
+        else:
+            self._pp_domains_supported = False
+        self._driver.set_features_enabled(self._pp_domains_supported,
+                                          self._virtual_fabric_enabled)
+
+    def get_features_enabled(self):
+        return self._pp_domains_supported, self._virtual_fabric_enabled
 
     def create_network_precommit(self, mech_context):
         """Create Network in the mechanism specific database table."""
@@ -103,14 +144,14 @@ class BrocadeMechanism():
                                       segment_id, network_type, tenant_id)
         except Exception:
             LOG.exception(
-                _("Brocade Mechanism: failed to create network in db"))
+                _LE("Brocade Mechanism: failed to create network in db"))
             raise Exception(
                 _("Brocade Mechanism: create_network_precommit failed"))
 
-        LOG.info(_("create network (precommit): %(network_id)s "
-                   "of network type = %(network_type)s "
-                   "with vlan = %(vlan_id)s "
-                   "for tenant %(tenant_id)s"),
+        LOG.info(_LI("create network (precommit): %(network_id)s "
+                     "of network type = %(network_type)s "
+                     "with vlan = %(vlan_id)s "
+                     "for tenant %(tenant_id)s"),
                  {'network_id': network_id,
                   'network_type': network_type,
                   'vlan_id': vlan_id,
@@ -119,7 +160,7 @@ class BrocadeMechanism():
     def create_network_postcommit(self, mech_context):
         """Create Network as a portprofile on the switch."""
 
-        LOG.debug(_("create_network_postcommit: called"))
+        LOG.debug("create_network_postcommit: called")
 
         network = mech_context.current
         # use network_id to get the network attributes
@@ -139,24 +180,24 @@ class BrocadeMechanism():
                                         self._switch['password'],
                                         vlan_id)
         except Exception:
-            LOG.exception(_("Brocade NOS driver: failed in create network"))
+            LOG.exception(_LE("Brocade NOS driver: failed in create network"))
             brocade_db.delete_network(context, network_id)
             raise Exception(
                 _("Brocade Mechanism: create_network_postcommmit failed"))
 
-        LOG.info(_("created network (postcommit): %(network_id)s"
-                   " of network type = %(network_type)s"
-                   " with vlan = %(vlan_id)s"
-                   " for tenant %(tenant_id)s"),
-                 {'network_id': network_id,
-                  'network_type': network_type,
-                  'vlan_id': vlan_id,
-                  'tenant_id': tenant_id})
+        LOG.info(_LI("created network (postcommit): %(network_id)s"
+                     " of network type = %(network_type)s"
+                     " with vlan = %(vlan_id)s"
+                     " for tenant %(tenant_id)s"),
+                {'network_id': network_id,
+                 'network_type': network_type,
+                 'vlan_id': vlan_id,
+                 'tenant_id': tenant_id})
 
     def delete_network_precommit(self, mech_context):
         """Delete Network from the plugin specific database table."""
 
-        LOG.debug(_("delete_network_precommit: called"))
+        LOG.debug("delete_network_precommit: called")
 
         network = mech_context.current
         network_id = network['id']
@@ -169,23 +210,23 @@ class BrocadeMechanism():
             brocade_db.delete_network(context, network_id)
         except Exception:
             LOG.exception(
-                _("Brocade Mechanism: failed to delete network in db"))
+                _LE("Brocade Mechanism: failed to delete network in db"))
             raise Exception(
                 _("Brocade Mechanism: delete_network_precommit failed"))
 
-        LOG.info(_("delete network (precommit): %(network_id)s"
-                   " with vlan = %(vlan_id)s"
-                   " for tenant %(tenant_id)s"),
-                 {'network_id': network_id,
-                  'vlan_id': vlan_id,
-                  'tenant_id': tenant_id})
+        LOG.info(_LI("delete network (precommit): %(network_id)s"
+                     " with vlan = %(vlan_id)s"
+                     " for tenant %(tenant_id)s"),
+                {'network_id': network_id,
+                 'vlan_id': vlan_id,
+                 'tenant_id': tenant_id})
 
     def delete_network_postcommit(self, mech_context):
         """Delete network which translates to removng portprofile
         from the switch.
         """
 
-        LOG.debug(_("delete_network_postcommit: called"))
+        LOG.debug("delete_network_postcommit: called")
         network = mech_context.current
         network_id = network['id']
         vlan_id = network['provider:segmentation_id']
@@ -197,17 +238,17 @@ class BrocadeMechanism():
                                         self._switch['password'],
                                         vlan_id)
         except Exception:
-            LOG.exception(_("Brocade NOS driver: failed to delete network"))
+            LOG.exception(_LE("Brocade NOS driver: failed to delete network"))
             raise Exception(
                 _("Brocade switch exception, "
                   "delete_network_postcommit failed"))
 
-        LOG.info(_("delete network (postcommit): %(network_id)s"
-                   " with vlan = %(vlan_id)s"
-                   " for tenant %(tenant_id)s"),
-                 {'network_id': network_id,
-                  'vlan_id': vlan_id,
-                  'tenant_id': tenant_id})
+        LOG.info(_LI("delete network (postcommit): %(network_id)s"
+                     " with vlan = %(vlan_id)s"
+                     " for tenant %(tenant_id)s"),
+                {'network_id': network_id,
+                 'vlan_id': vlan_id,
+                 'tenant_id': tenant_id})
 
     def update_network_precommit(self, mech_context):
         """Noop now, it is left here for future."""
@@ -220,7 +261,7 @@ class BrocadeMechanism():
     def create_port_precommit(self, mech_context):
         """Create logical port on the switch (db update)."""
 
-        LOG.debug(_("create_port_precommit: called"))
+        LOG.debug("create_port_precommit: called")
 
         port = mech_context.current
         port_id = port['id']
@@ -238,14 +279,15 @@ class BrocadeMechanism():
                                    None,
                                    vlan_id, tenant_id, admin_state_up)
         except Exception:
-            LOG.exception(_("Brocade Mechanism: failed to create port in db"))
+            LOG.exception(_LE("Brocade Mechanism: failed to create port"
+                              " in db"))
             raise Exception(
                 _("Brocade Mechanism: create_port_precommit failed"))
 
     def create_port_postcommit(self, mech_context):
         """Associate the assigned MAC address to the portprofile."""
 
-        LOG.debug(_("create_port_postcommit: called"))
+        LOG.debug("create_port_postcommit: called")
 
         port = mech_context.current
         port_id = port['id']
@@ -269,21 +311,21 @@ class BrocadeMechanism():
                                                   mac)
         except Exception:
             LOG.exception(
-                _("Brocade NOS driver: failed to associate mac %s")
-                % interface_mac)
+                _LE("Brocade NOS driver: failed to associate mac %s"),
+                interface_mac)
             raise Exception(
                 _("Brocade switch exception: create_port_postcommit failed"))
 
         LOG.info(
-            _("created port (postcommit): port_id=%(port_id)s"
-              " network_id=%(network_id)s tenant_id=%(tenant_id)s"),
+            _LI("created port (postcommit): port_id=%(port_id)s"
+                " network_id=%(network_id)s tenant_id=%(tenant_id)s"),
             {'port_id': port_id,
              'network_id': network_id, 'tenant_id': tenant_id})
 
     def delete_port_precommit(self, mech_context):
         """Delete logical port on the switch (db update)."""
 
-        LOG.debug(_("delete_port_precommit: called"))
+        LOG.debug("delete_port_precommit: called")
         port = mech_context.current
         port_id = port['id']
 
@@ -292,14 +334,15 @@ class BrocadeMechanism():
         try:
             brocade_db.delete_port(context, port_id)
         except Exception:
-            LOG.exception(_("Brocade Mechanism: failed to delete port in db"))
+            LOG.exception(_LE("Brocade Mechanism: failed to delete port"
+                              " in db"))
             raise Exception(
                 _("Brocade Mechanism: delete_port_precommit failed"))
 
     def delete_port_postcommit(self, mech_context):
         """Dissociate MAC address from the portprofile."""
 
-        LOG.debug(_("delete_port_postcommit: called"))
+        LOG.debug("delete_port_postcommit: called")
         port = mech_context.current
         port_id = port['id']
         network_id = port['network_id']
@@ -323,48 +366,48 @@ class BrocadeMechanism():
                 mac)
         except Exception:
             LOG.exception(
-                _("Brocade NOS driver: failed to dissociate MAC %s") %
+                _LE("Brocade NOS driver: failed to dissociate MAC %s"),
                 interface_mac)
             raise Exception(
                 _("Brocade switch exception, delete_port_postcommit failed"))
 
         LOG.info(
-            _("delete port (postcommit): port_id=%(port_id)s"
-              " network_id=%(network_id)s tenant_id=%(tenant_id)s"),
+            _LI("delete port (postcommit): port_id=%(port_id)s"
+                " network_id=%(network_id)s tenant_id=%(tenant_id)s"),
             {'port_id': port_id,
              'network_id': network_id, 'tenant_id': tenant_id})
 
     def update_port_precommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("update_port_precommit(self: called"))
+        LOG.debug("update_port_precommit(self: called")
 
     def update_port_postcommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("update_port_postcommit: called"))
+        LOG.debug("update_port_postcommit: called")
 
     def create_subnet_precommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("create_subnetwork_precommit: called"))
+        LOG.debug("create_subnetwork_precommit: called")
 
     def create_subnet_postcommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("create_subnetwork_postcommit: called"))
+        LOG.debug("create_subnetwork_postcommit: called")
 
     def delete_subnet_precommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("delete_subnetwork_precommit: called"))
+        LOG.debug("delete_subnetwork_precommit: called")
 
     def delete_subnet_postcommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("delete_subnetwork_postcommit: called"))
+        LOG.debug("delete_subnetwork_postcommit: called")
 
     def update_subnet_precommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("update_subnet_precommit(self: called"))
+        LOG.debug("update_subnet_precommit(self: called")
 
     def update_subnet_postcommit(self, mech_context):
         """Noop now, it is left here for future."""
-        LOG.debug(_("update_subnet_postcommit: called"))
+        LOG.debug("update_subnet_postcommit: called")
 
     @staticmethod
     def mac_reformat_62to34(interface_mac):

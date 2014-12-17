@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Cloudbase Solutions SRL
 # All Rights Reserved.
 #
@@ -14,12 +12,15 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Alessandro Pilotti, Cloudbase Solutions Srl
 
 from oslo.config import cfg
 
+from neutron.api.rpc.handlers import dhcp_rpc
+from neutron.api.rpc.handlers import l3_rpc
+from neutron.api.rpc.handlers import metadata_rpc
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import agents_db
 from neutron.db import db_base_plugin_v2
@@ -29,8 +30,8 @@ from neutron.db import portbindings_base
 from neutron.db import quota_db  # noqa
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
 from neutron.plugins.common import constants as svc_constants
 from neutron.plugins.common import utils as plugin_utils
 from neutron.plugins.hyperv import agent_notifier_api
@@ -159,7 +160,6 @@ class HyperVNeutronPlugin(agents_db.AgentDbMixin,
 
     def __init__(self, configfile=None):
         self._db = hyperv_db.HyperVPluginDB()
-        self._db.initialize()
         self.base_binding_dict = {
             portbindings.VIF_TYPE: portbindings.VIF_TYPE_HYPERV}
         portbindings_base.register_port_dict_function()
@@ -187,20 +187,23 @@ class HyperVNeutronPlugin(agents_db.AgentDbMixin,
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN,
                                svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
-        self.conn = rpc.create_connection(new=True)
+        self.conn = n_rpc.create_connection(new=True)
         self.notifier = agent_notifier_api.AgentNotifierApi(
             topics.AGENT)
-        self.callbacks = rpc_callbacks.HyperVRpcCallbacks(self.notifier)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.endpoints = [rpc_callbacks.HyperVRpcCallbacks(self.notifier),
+                          dhcp_rpc.DhcpRpcCallback(),
+                          l3_rpc.L3RpcCallback(),
+                          agents_db.AgentExtRpcCallback(),
+                          metadata_rpc.MetadataRpcCallback()]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
 
     def _parse_network_vlan_ranges(self):
         self._network_vlan_ranges = plugin_utils.parse_network_vlan_ranges(
             cfg.CONF.HYPERV.network_vlan_ranges)
-        LOG.info(_("Network VLAN ranges: %s"), self._network_vlan_ranges)
+        LOG.info(_LI("Network VLAN ranges: %s"), self._network_vlan_ranges)
 
     def _check_vlan_id_in_range(self, physical_network, vlan_id):
         for r in self._network_vlan_ranges[physical_network]:
@@ -251,7 +254,7 @@ class HyperVNeutronPlugin(agents_db.AgentDbMixin,
             self._process_l3_create(context, net, network['network'])
             self._extend_network_dict_provider(context, net)
 
-            LOG.debug(_("Created network: %s"), net['id'])
+            LOG.debug("Created network: %s", net['id'])
             return net
 
     def _extend_network_dict_provider(self, context, network):

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Brocade Communications System, Inc.
 # All rights reserved.
 #
@@ -15,10 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
-# Authors:
-# Shiv Haris (sharis@brocade.com)
-# Varma Bhupatiraju (vbhupati@#brocade.com)
-#
 # (Some parts adapted from LinuxBridge Plugin)
 # TODO(shiv) need support for security groups
 
@@ -26,32 +20,34 @@
 """Implentation of Brocade Neutron Plugin."""
 
 from oslo.config import cfg
+from oslo import messaging
+from oslo.utils import importutils
+from oslo_context import context as oslo_context
 
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
+from neutron.api.rpc.handlers import dhcp_rpc
+from neutron.api.rpc.handlers import l3_rpc
+from neutron.api.rpc.handlers import metadata_rpc
+from neutron.api.rpc.handlers import securitygroups_rpc
 from neutron.common import constants as q_const
-from neutron.common import rpc as q_rpc
+from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.common import utils
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron.db import api as db
 from neutron.db import db_base_plugin_v2
-from neutron.db import dhcp_rpc_base
 from neutron.db import external_net_db
 from neutron.db import extraroute_db
 from neutron.db import l3_agentschedulers_db
-from neutron.db import l3_rpc_base
 from neutron.db import portbindings_base
 from neutron.db import securitygroups_rpc_base as sg_db_rpc
 from neutron.extensions import portbindings
 from neutron.extensions import securitygroup as ext_sg
-from neutron.openstack.common import context
-from neutron.openstack.common import importutils
+from neutron.i18n import _LE, _LI
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import proxy
 from neutron.plugins.brocade.db import models as brocade_db
 from neutron.plugins.brocade import vlanbm as vbm
 from neutron.plugins.common import constants as svc_constants
@@ -81,25 +77,67 @@ cfg.CONF.register_opts(SWITCH_OPTS, "SWITCH")
 cfg.CONF.register_opts(PHYSICAL_INTERFACE_OPTS, "PHYSICAL_INTERFACE")
 
 
-class BridgeRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-                         l3_rpc_base.L3RpcCallbackMixin,
-                         sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
+class BridgeRpcCallbacks(object):
     """Agent callback."""
 
-    RPC_API_VERSION = '1.1'
+    target = messaging.Target(version='1.2')
     # Device names start with "tap"
     # history
     #   1.1 Support Security Group RPC
-    TAP_PREFIX_LEN = 3
+    #   1.2 Support get_devices_details_list
 
-    def create_rpc_dispatcher(self):
-        """Get the rpc dispatcher for this manager.
+    def get_device_details(self, rpc_context, **kwargs):
+        """Agent requests device details."""
 
-        If a manager would like to set an rpc API version, or support more than
-        one class as the target of rpc messages, override this method.
-        """
-        return q_rpc.PluginRpcDispatcher([self,
-                                          agents_db.AgentExtRpcCallback()])
+        agent_id = kwargs.get('agent_id')
+        device = kwargs.get('device')
+        LOG.debug("Device %(device)s details requested from %(agent_id)s",
+                  {'device': device, 'agent_id': agent_id})
+        port = brocade_db.get_port(rpc_context,
+                                   device[len(q_const.TAP_DEVICE_PREFIX):])
+        if port:
+            entry = {'device': device,
+                     'vlan_id': port.vlan_id,
+                     'network_id': port.network_id,
+                     'port_id': port.port_id,
+                     'physical_network': port.physical_interface,
+                     'admin_state_up': port.admin_state_up
+                     }
+
+        else:
+            entry = {'device': device}
+            LOG.debug("%s can not be found in database", device)
+        return entry
+
+    def get_devices_details_list(self, rpc_context, **kwargs):
+        return [
+            self.get_device_details(
+                rpc_context,
+                device=device,
+                **kwargs
+            )
+            for device in kwargs.pop('devices', [])
+        ]
+
+    def update_device_down(self, rpc_context, **kwargs):
+        """Device no longer exists on agent."""
+
+        device = kwargs.get('device')
+        port = self.get_port_from_device(device)
+        if port:
+            entry = {'device': device,
+                     'exists': True}
+            # Set port status to DOWN
+            port_id = port['port_id']
+            brocade_db.update_port_state(rpc_context, port_id, False)
+        else:
+            entry = {'device': device,
+                     'exists': False}
+            LOG.debug("%s can not be found in database", device)
+        return entry
+
+
+class SecurityGroupServerRpcMixin(sg_db_rpc.SecurityGroupServerRpcMixin):
 
     @classmethod
     def get_port_from_device(cls, device):
@@ -116,7 +154,7 @@ class BridgeRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
         # Doing what other plugins are doing
         session = db.get_session()
         port = brocade_db.get_port_from_device(
-            session, device[cls.TAP_PREFIX_LEN:])
+            session, device[len(q_const.TAP_DEVICE_PREFIX):])
 
         # TODO(shiv): need to extend the db model to include device owners
         # make it appears that the device owner is of type network
@@ -126,48 +164,8 @@ class BridgeRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
             port['binding:vif_type'] = 'bridge'
         return port
 
-    def get_device_details(self, rpc_context, **kwargs):
-        """Agent requests device details."""
 
-        agent_id = kwargs.get('agent_id')
-        device = kwargs.get('device')
-        LOG.debug(_("Device %(device)s details requested from %(agent_id)s"),
-                  {'device': device, 'agent_id': agent_id})
-        port = brocade_db.get_port(rpc_context, device[self.TAP_PREFIX_LEN:])
-        if port:
-            entry = {'device': device,
-                     'vlan_id': port.vlan_id,
-                     'network_id': port.network_id,
-                     'port_id': port.port_id,
-                     'physical_network': port.physical_interface,
-                     'admin_state_up': port.admin_state_up
-                     }
-
-        else:
-            entry = {'device': device}
-            LOG.debug(_("%s can not be found in database"), device)
-        return entry
-
-    def update_device_down(self, rpc_context, **kwargs):
-        """Device no longer exists on agent."""
-
-        device = kwargs.get('device')
-        port = self.get_port_from_device(device)
-        if port:
-            entry = {'device': device,
-                     'exists': True}
-            # Set port status to DOWN
-            port_id = port['port_id']
-            brocade_db.update_port_state(rpc_context, port_id, False)
-        else:
-            entry = {'device': device,
-                     'exists': False}
-            LOG.debug(_("%s can not be found in database"), device)
-        return entry
-
-
-class AgentNotifierApi(proxy.RpcProxy,
-                       sg_rpc.SecurityGroupAgentRpcApiMixin):
+class AgentNotifierApi(sg_rpc.SecurityGroupAgentRpcApiMixin):
     """Agent side of the linux bridge rpc API.
 
     API version history:
@@ -177,12 +175,10 @@ class AgentNotifierApi(proxy.RpcProxy,
 
     """
 
-    BASE_RPC_API_VERSION = '1.1'
-
     def __init__(self, topic):
-        super(AgentNotifierApi, self).__init__(
-            topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.topic = topic
+        target = messaging.Target(topic=topic, version='1.0')
+        self.client = n_rpc.get_client(target)
         self.topic_network_delete = topics.get_topic_name(topic,
                                                           topics.NETWORK,
                                                           topics.DELETE)
@@ -191,24 +187,20 @@ class AgentNotifierApi(proxy.RpcProxy,
                                                        topics.UPDATE)
 
     def network_delete(self, context, network_id):
-        self.fanout_cast(context,
-                         self.make_msg('network_delete',
-                                       network_id=network_id),
-                         topic=self.topic_network_delete)
+        cctxt = self.client.prepare(topic=self.topic_network_delete,
+                                    fanout=True)
+        cctxt.cast(context, 'network_delete', network_id=network_id)
 
     def port_update(self, context, port, physical_network, vlan_id):
-        self.fanout_cast(context,
-                         self.make_msg('port_update',
-                                       port=port,
-                                       physical_network=physical_network,
-                                       vlan_id=vlan_id),
-                         topic=self.topic_port_update)
+        cctxt = self.client.prepare(topic=self.topic_port_update, fanout=True)
+        cctxt.cast(context, 'port_update', port=port,
+                   physical_network=physical_network, vlan_id=vlan_id)
 
 
 class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                       external_net_db.External_net_db_mixin,
                       extraroute_db.ExtraRoute_db_mixin,
-                      sg_db_rpc.SecurityGroupServerRpcMixin,
+                      SecurityGroupServerRpcMixin,
                       l3_agentschedulers_db.L3AgentSchedulerDbMixin,
                       agentschedulers_db.DhcpAgentSchedulerDbMixin,
                       portbindings_base.PortBindingBaseMixin):
@@ -236,7 +228,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                    physical_interface)
         self.base_binding_dict = self._get_base_binding_dict()
         portbindings_base.register_port_dict_function()
-        self.ctxt = context.get_admin_context()
+        self.ctxt = oslo_context.get_admin_context()
         self.ctxt.session = db.get_session()
         self._vlan_bitmap = vbm.VlanBitmap(self.ctxt)
         self._setup_rpc()
@@ -261,21 +253,25 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         # RPC support
         self.service_topics = {svc_constants.CORE: topics.PLUGIN,
                                svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
-        self.rpc_context = context.RequestContext('neutron', 'neutron',
+        self.rpc_context = oslo_context.RequestContext('neutron', 'neutron',
                                                   is_admin=False)
-        self.conn = rpc.create_connection(new=True)
-        self.callbacks = BridgeRpcCallbacks()
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.conn = n_rpc.create_connection(new=True)
+        self.endpoints = [BridgeRpcCallbacks(),
+                          securitygroups_rpc.SecurityGroupServerRpcCallback(),
+                          dhcp_rpc.DhcpRpcCallback(),
+                          l3_rpc.L3RpcCallback(),
+                          agents_db.AgentExtRpcCallback(),
+                          metadata_rpc.MetadataRpcCallback()]
         for svc_topic in self.service_topics.values():
-            self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        # Consume from all consumers in a thread
-        self.conn.consume_in_thread()
+            self.conn.create_consumer(svc_topic, self.endpoints, fanout=False)
+        # Consume from all consumers in threads
+        self.conn.consume_in_threads()
         self.notifier = AgentNotifierApi(topics.AGENT)
         self.agent_notifiers[q_const.AGENT_TYPE_DHCP] = (
             dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
         )
         self.agent_notifiers[q_const.AGENT_TYPE_L3] = (
-            l3_rpc_agent_api.L3AgentNotify
+            l3_rpc_agent_api.L3AgentNotifyAPI()
         )
 
     def create_network(self, context, network):
@@ -297,8 +293,8 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                             vlan_id)
             except Exception:
                 # Proper formatting
-                LOG.exception(_("Brocade NOS driver error"))
-                LOG.debug(_("Returning the allocated vlan (%d) to the pool"),
+                LOG.exception(_LE("Brocade NOS driver error"))
+                LOG.debug("Returning the allocated vlan (%d) to the pool",
                           vlan_id)
                 self._vlan_bitmap.release_vlan(int(vlan_id))
                 raise Exception(_("Brocade plugin raised exception, "
@@ -307,7 +303,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
             brocade_db.create_network(context, net_uuid, vlan_id)
             self._process_l3_create(context, net, network['network'])
 
-        LOG.info(_("Allocated vlan (%d) from the pool"), vlan_id)
+        LOG.info(_LI("Allocated vlan (%d) from the pool"), vlan_id)
         return net
 
     def delete_network(self, context, net_id):
@@ -341,7 +337,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                             vlan_id)
             except Exception:
                 # Proper formatting
-                LOG.exception(_("Brocade NOS driver error"))
+                LOG.exception(_LE("Brocade NOS driver error"))
                 raise Exception(_("Brocade plugin raised exception, "
                                   "check logs"))
 
@@ -394,7 +390,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                       mac)
             except Exception:
                 # Proper formatting
-                LOG.exception(_("Brocade NOS driver error"))
+                LOG.exception(_LE("Brocade NOS driver error"))
                 raise Exception(_("Brocade plugin raised exception, "
                                   "check logs"))
 
@@ -424,7 +420,7 @@ class BrocadePluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                          vlan_id,
                                                          mac)
             except Exception:
-                LOG.exception(_("Brocade NOS driver error"))
+                LOG.exception(_LE("Brocade NOS driver error"))
                 raise Exception(
                     _("Brocade plugin raised exception, check logs"))
 

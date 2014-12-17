@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Sumit Naiksatam, sumitnaiksatam@gmail.com, Big Switch Networks, Inc.
 
 import abc
 
@@ -54,6 +52,30 @@ class FirewallPolicyInUse(qexception.InUse):
     message = _("Firewall Policy %(firewall_policy_id)s is being used.")
 
 
+class FirewallRuleSharingConflict(qexception.Conflict):
+
+    """FWaaS exception for firewall rules
+
+    When a shared policy is created or updated with unshared rules,
+    this exception will be raised.
+    """
+    message = _("Operation cannot be performed since Firewall Policy "
+                "%(firewall_policy_id)s is shared but Firewall Rule "
+                "%(firewall_rule_id)s is not shared")
+
+
+class FirewallPolicySharingConflict(qexception.Conflict):
+
+    """FWaaS exception for firewall policy
+
+    When a policy is shared without sharing its associated rules,
+    this exception will be raised.
+    """
+    message = _("Operation cannot be performed. Before sharing Firewall "
+                "Policy %(firewall_policy_id)s, share associated Firewall "
+                "Rule %(firewall_rule_id)s")
+
+
 class FirewallRuleNotFound(qexception.NotFound):
     message = _("Firewall Rule %(firewall_rule_id)s could not be found.")
 
@@ -78,6 +100,15 @@ class FirewallRuleInvalidAction(qexception.InvalidInput):
                 "Only action values %(values)s are supported.")
 
 
+class FirewallRuleInvalidICMPParameter(qexception.InvalidInput):
+    message = _("%(param)s are not allowed when protocol "
+                "is set to ICMP.")
+
+
+class FirewallRuleWithPortWithoutProtocolInvalid(qexception.InvalidInput):
+    message = _("Source/destination port requires a protocol")
+
+
 class FirewallInvalidPortValue(qexception.InvalidInput):
     message = _("Invalid value for port %(port)s.")
 
@@ -96,6 +127,19 @@ class FirewallInternalDriverError(qexception.NeutronException):
     message = _("%(driver)s: Internal driver error.")
 
 
+class FirewallRuleConflict(qexception.Conflict):
+
+    """Firewall rule conflict exception.
+
+    Occurs when admin policy tries to use another tenant's unshared
+    rule.
+    """
+
+    message = _("Operation cannot be performed since Firewall Rule "
+                "%(firewall_rule_id)s is not shared and belongs to "
+                "another tenant %(tenant_id)s")
+
+
 fw_valid_protocol_values = [None, constants.TCP, constants.UDP, constants.ICMP]
 fw_valid_action_values = [constants.FWAAS_ALLOW, constants.FWAAS_DENY]
 
@@ -108,15 +152,15 @@ def convert_protocol(value):
         if 0 <= val <= 255:
             return val
         else:
-            raise FirewallRuleInvalidProtocol(protocol=value,
-                                              values=
-                                              fw_valid_protocol_values)
+            raise FirewallRuleInvalidProtocol(
+                protocol=value,
+                values=fw_valid_protocol_values)
     elif value.lower() in fw_valid_protocol_values:
         return value.lower()
     else:
-        raise FirewallRuleInvalidProtocol(protocol=value,
-                                          values=
-                                          fw_valid_protocol_values)
+        raise FirewallRuleInvalidProtocol(
+            protocol=value,
+            values=fw_valid_protocol_values)
 
 
 def convert_action_to_case_insensitive(value):
@@ -288,7 +332,7 @@ firewall_quota_opts = [
                help=_('Number of firewall policies allowed per tenant. '
                       'A negative value means unlimited.')),
     cfg.IntOpt('quota_firewall_rule',
-               default=-1,
+               default=100,
                help=_('Number of firewall rules allowed per tenant. '
                       'A negative value means unlimited.')),
 ]

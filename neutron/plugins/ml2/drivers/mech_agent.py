@@ -17,6 +17,7 @@ import abc
 import six
 
 from neutron.extensions import portbindings
+from neutron.i18n import _LW
 from neutron.openstack.common import log
 from neutron.plugins.ml2 import driver_api as api
 
@@ -51,26 +52,26 @@ class AgentMechanismDriverBase(api.MechanismDriver):
         pass
 
     def bind_port(self, context):
-        LOG.debug(_("Attempting to bind port %(port)s on "
-                    "network %(network)s"),
+        LOG.debug("Attempting to bind port %(port)s on "
+                  "network %(network)s",
                   {'port': context.current['id'],
                    'network': context.network.current['id']})
         vnic_type = context.current.get(portbindings.VNIC_TYPE,
                                         portbindings.VNIC_NORMAL)
         if vnic_type not in self.supported_vnic_types:
-            LOG.debug(_("Refusing to bind due to unsupported vnic_type: %s"),
+            LOG.debug("Refusing to bind due to unsupported vnic_type: %s",
                       vnic_type)
             return
         for agent in context.host_agents(self.agent_type):
-            LOG.debug(_("Checking agent: %s"), agent)
+            LOG.debug("Checking agent: %s", agent)
             if agent['alive']:
                 for segment in context.network.network_segments:
                     if self.try_to_bind_segment_for_agent(context, segment,
                                                           agent):
-                        LOG.debug(_("Bound using segment: %s"), segment)
+                        LOG.debug("Bound using segment: %s", segment)
                         return
             else:
-                LOG.warning(_("Attempting to bind with dead agent: %s"),
+                LOG.warning(_LW("Attempting to bind with dead agent: %s"),
                             agent)
 
     @abc.abstractmethod
@@ -82,10 +83,11 @@ class AgentMechanismDriverBase(api.MechanismDriver):
         :param agent: agents_db entry describing agent to bind
         :returns: True iff segment has been bound for agent
 
-        Called inside transaction during bind_port() so that derived
-        MechanismDrivers can use agent_db data along with built-in
-        knowledge of the corresponding agent's capabilities to attempt
-        to bind to the specified network segment for the agent.
+        Called outside any transaction during bind_port() so that
+        derived MechanismDrivers can use agent_db data along with
+        built-in knowledge of the corresponding agent's capabilities
+        to attempt to bind to the specified network segment for the
+        agent.
 
         If the segment can be bound for the agent, this function must
         call context.set_binding() with appropriate values and then
@@ -141,7 +143,7 @@ class SimpleAgentMechanismDriverBase(AgentMechanismDriverBase):
         :param agent: agents_db entry describing agent to bind
         :returns: True iff segment can be bound for agent
 
-        Called inside transaction during bind_port so that derived
+        Called outside any transaction during bind_port so that derived
         MechanismDrivers can use agent_db data along with built-in
         knowledge of the corresponding agent's capabilities to
         determine whether or not the specified network segment can be

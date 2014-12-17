@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2013 PLUMgrid, Inc. All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,10 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Edgar Magana, emagana@plumgrid.com, PLUMgrid, Inc.
 
 from neutron.extensions import providernet as provider
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -29,12 +27,12 @@ class Plumlib():
     """
 
     def __init__(self):
-        LOG.info(_('Python PLUMgrid Fake Library Started '))
+        LOG.info(_LI('Python PLUMgrid Fake Library Started '))
         pass
 
     def director_conn(self, director_plumgrid, director_port, timeout,
                       director_admin, director_password):
-        LOG.info(_('Fake Director: %s'),
+        LOG.info(_LI('Fake Director: %s'),
                  director_plumgrid + ':' + director_port)
         pass
 
@@ -97,3 +95,21 @@ class Plumlib():
     def disassociate_floatingips(self, fip, port_id):
         return dict((key, fip[key]) for key in ("id", "floating_network_id",
                                                 "floating_ip_address"))
+
+    def create_security_group(self, sg_db):
+        pass
+
+    def update_security_group(self, sg_db):
+        pass
+
+    def delete_security_group(self, sg_db):
+        pass
+
+    def create_security_group_rule(self, sg_rule_db):
+        pass
+
+    def create_security_group_rule_bulk(self, sg_rule_db):
+        pass
+
+    def delete_security_group_rule(self, sg_rule_db):
+        pass

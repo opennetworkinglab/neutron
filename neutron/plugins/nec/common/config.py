@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,18 +11,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
 from oslo.config import cfg
 
 from neutron.agent.common import config
-from neutron.openstack.common import rpc  # noqa
 from neutron.plugins.nec.common import constants as nconst
 
 
 ovs_opts = [
     cfg.StrOpt('integration_bridge', default='br-int',
-               help=_("Integration bridge to use")),
+               help=_("Integration bridge to use.")),
 ]
 
 agent_opts = [
@@ -35,28 +31,30 @@ agent_opts = [
 
 ofc_opts = [
     cfg.StrOpt('host', default='127.0.0.1',
-               help=_("Host to connect to")),
+               help=_("Host to connect to.")),
     cfg.StrOpt('path_prefix', default='',
                help=_("Base URL of OFC REST API. "
                       "It is prepended to each API request.")),
     cfg.StrOpt('port', default='8888',
-               help=_("Port to connect to")),
+               help=_("Port to connect to.")),
     cfg.StrOpt('driver', default='trema',
-               help=_("Driver to use")),
+               help=_("Driver to use.")),
     cfg.BoolOpt('enable_packet_filter', default=True,
-                help=_("Enable packet filter")),
+                help=_("Enable packet filter.")),
+    cfg.BoolOpt('support_packet_filter_on_ofc_router', default=True,
+                help=_("Support packet filter on OFC router interface.")),
     cfg.BoolOpt('use_ssl', default=False,
-                help=_("Use SSL to connect")),
+                help=_("Use SSL to connect.")),
     cfg.StrOpt('key_file',
-               help=_("Key file")),
+               help=_("Location of key file.")),
     cfg.StrOpt('cert_file',
-               help=_("Certificate file")),
+               help=_("Location of certificate file.")),
     cfg.BoolOpt('insecure_ssl', default=False,
-                help=_("Disable SSL certificate verification")),
+                help=_("Disable SSL certificate verification.")),
     cfg.IntOpt('api_max_attempts', default=3,
-               help=_("Maximum attempts per OFC API request."
+               help=_("Maximum attempts per OFC API request. "
                       "NEC plugin retries API request to OFC "
-                      "when OFC returns ServiceUnavailable (503)."
+                      "when OFC returns ServiceUnavailable (503). "
                       "The value must be greater than 0.")),
 ]
 

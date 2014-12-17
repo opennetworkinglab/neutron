@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 VMware Inc.
 # All Rights Reserved
 #
@@ -15,10 +13,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.api.v2 import attributes as attr
 from neutron.common import exceptions as n_exc
+from neutron.extensions import multiprovidernet as mpnet
+from neutron.extensions import providernet as pnet
+from neutron.i18n import _LW
 from neutron.openstack.common import log
 from neutron.plugins.vmware.api_client import client
 from neutron.plugins.vmware.api_client import exception as api_exc
+from neutron.plugins.vmware.common import utils as vmw_utils
 from neutron.plugins.vmware.dbexts import db as nsx_db
 from neutron.plugins.vmware.dbexts import networkgw_db
 from neutron.plugins.vmware import nsx_cluster
@@ -62,7 +65,7 @@ def get_nsx_switch_ids(session, cluster, neutron_network_id):
         # more than once for each network in Neutron's lifetime
         nsx_switches = switchlib.get_lswitches(cluster, neutron_network_id)
         if not nsx_switches:
-            LOG.warn(_("Unable to find NSX switches for Neutron network %s"),
+            LOG.warn(_LW("Unable to find NSX switches for Neutron network %s"),
                      neutron_network_id)
             return
         nsx_switch_ids = []
@@ -109,7 +112,7 @@ def get_nsx_switch_and_port_id(session, cluster, neutron_port_id):
         # NOTE(salv-orlando): Not handling the case where more than one
         # port is found with the same neutron port tag
         if not nsx_ports:
-            LOG.warn(_("Unable to find NSX port for Neutron port %s"),
+            LOG.warn(_LW("Unable to find NSX port for Neutron port %s"),
                      neutron_port_id)
             # This method is supposed to return a tuple
             return None, None
@@ -149,12 +152,12 @@ def get_nsx_security_group_id(session, cluster, neutron_id):
         # NOTE(salv-orlando): Not handling the case where more than one
         # security profile is found with the same neutron port tag
         if not nsx_sec_profiles:
-            LOG.warn(_("Unable to find NSX security profile for Neutron "
-                       "security group %s"), neutron_id)
+            LOG.warn(_LW("Unable to find NSX security profile for Neutron "
+                         "security group %s"), neutron_id)
             return
         elif len(nsx_sec_profiles) > 1:
-            LOG.warn(_("Multiple NSX security profiles found for Neutron "
-                       "security group %s"), neutron_id)
+            LOG.warn(_LW("Multiple NSX security profiles found for Neutron "
+                         "security group %s"), neutron_id)
         nsx_sec_profile = nsx_sec_profiles[0]
         nsx_id = nsx_sec_profile['uuid']
         with session.begin(subtransactions=True):
@@ -184,7 +187,7 @@ def get_nsx_router_id(session, cluster, neutron_router_id):
         # NOTE(salv-orlando): Not handling the case where more than one
         # port is found with the same neutron port tag
         if not nsx_routers:
-            LOG.warn(_("Unable to find NSX router for Neutron router %s"),
+            LOG.warn(_LW("Unable to find NSX router for Neutron router %s"),
                      neutron_router_id)
             return
         nsx_router = nsx_routers[0]
@@ -208,7 +211,6 @@ def create_nsx_cluster(cluster_opts, concurrent_connections, gen_timeout):
                      for ctrl in cluster.nsx_controllers]
     cluster.api_client = client.NsxApiClient(
         api_providers, cluster.nsx_user, cluster.nsx_password,
-        request_timeout=cluster.req_timeout,
         http_timeout=cluster.http_timeout,
         retries=cluster.retries,
         redirects=cluster.redirects,
@@ -242,8 +244,75 @@ def get_nsx_device_statuses(cluster, tenant_id):
     except api_exc.NsxApiException:
         # Do not make a NSX API exception fatal
         if tenant_id:
-            LOG.warn(_("Unable to retrieve operational status for gateway "
-                       "devices belonging to tenant: %s"), tenant_id)
+            LOG.warn(_LW("Unable to retrieve operational status for gateway "
+                         "devices belonging to tenant: %s"), tenant_id)
         else:
-            LOG.warn(_("Unable to retrieve operational status for "
-                       "gateway devices"))
+            LOG.warn(_LW("Unable to retrieve operational status for "
+                         "gateway devices"))
+
+
+def _convert_bindings_to_nsx_transport_zones(bindings):
+    nsx_transport_zones_config = []
+    for binding in bindings:
+        transport_entry = {}
+        if binding.binding_type in [vmw_utils.NetworkTypes.FLAT,
+                                    vmw_utils.NetworkTypes.VLAN]:
+            transport_entry['transport_type'] = (
+                vmw_utils.NetworkTypes.BRIDGE)
+            transport_entry['binding_config'] = {}
+            vlan_id = binding.vlan_id
+            if vlan_id:
+                transport_entry['binding_config'] = (
+                    {'vlan_translation': [{'transport': vlan_id}]})
+        else:
+            transport_entry['transport_type'] = binding.binding_type
+        transport_entry['zone_uuid'] = binding.phy_uuid
+        nsx_transport_zones_config.append(transport_entry)
+    return nsx_transport_zones_config
+
+
+def _convert_segments_to_nsx_transport_zones(segments, default_tz_uuid):
+    nsx_transport_zones_config = []
+    for transport_zone in segments:
+        for value in [pnet.NETWORK_TYPE, pnet.PHYSICAL_NETWORK,
+                      pnet.SEGMENTATION_ID]:
+            if transport_zone.get(value) == attr.ATTR_NOT_SPECIFIED:
+                transport_zone[value] = None
+
+        transport_entry = {}
+        transport_type = transport_zone.get(pnet.NETWORK_TYPE)
+        if transport_type in [vmw_utils.NetworkTypes.FLAT,
+                              vmw_utils.NetworkTypes.VLAN]:
+            transport_entry['transport_type'] = (
+                vmw_utils.NetworkTypes.BRIDGE)
+            transport_entry['binding_config'] = {}
+            vlan_id = transport_zone.get(pnet.SEGMENTATION_ID)
+            if vlan_id:
+                transport_entry['binding_config'] = (
+                    {'vlan_translation': [{'transport': vlan_id}]})
+        else:
+            transport_entry['transport_type'] = transport_type
+        transport_entry['zone_uuid'] = (
+            transport_zone[pnet.PHYSICAL_NETWORK] or default_tz_uuid)
+        nsx_transport_zones_config.append(transport_entry)
+    return nsx_transport_zones_config
+
+
+def convert_to_nsx_transport_zones(
+    default_tz_uuid, network=None, bindings=None,
+    default_transport_type=None):
+
+    # Convert fields from provider request to nsx format
+    if (network and not attr.is_attr_set(
+        network.get(mpnet.SEGMENTS))):
+        return [{"zone_uuid": default_tz_uuid,
+                 "transport_type": default_transport_type}]
+
+    # Convert fields from db to nsx format
+    if bindings:
+        return _convert_bindings_to_nsx_transport_zones(bindings)
+
+    # If we end up here we need to convert multiprovider segments into nsx
+    # transport zone configurations
+    return _convert_segments_to_nsx_transport_zones(
+        network.get(mpnet.SEGMENTS), default_tz_uuid)

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 Brocade Communications System, Inc.
 # All rights reserved.
 #
@@ -14,10 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# Authors:
-# Shiv Haris (sharis@brocade.com)
-# Varma Bhupatiraju (vbhupati@#brocade.com)
 
 
 """A Vlan Bitmap class to handle allocation/de-allocation of vlan ids."""
@@ -47,7 +41,7 @@ class VlanBitmap(object):
     def get_next_vlan(self, vlan_id=None):
         """Try to get a specific vlan if requested or get the next vlan."""
         min_vlan_search = vlan_id or MIN_VLAN
-        max_vlan_search = (vlan_id and vlan_id + 1) or MAX_VLAN
+        max_vlan_search = (vlan_id + 1) if vlan_id else MAX_VLAN
 
         for vlan in moves.xrange(min_vlan_search, max_vlan_search):
             if vlan not in self.vlans:

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,8 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
-# @author: Akihiro MOTOKI
 
 import netaddr
 
@@ -116,26 +112,11 @@ class OFCManager(object):
         self._del_ofc_item(context, "ofc_port", port_id)
 
     def create_ofc_packet_filter(self, context, filter_id, filter_dict):
-        ofc_net_id = self._get_ofc_id(context, "ofc_network",
-                                      filter_dict['network_id'])
-        in_port_id = filter_dict.get('in_port')
-        portinfo = None
-        if in_port_id:
-            portinfo = ndb.get_portinfo(context.session, in_port_id)
-            if not portinfo:
-                raise nexc.PortInfoNotFound(id=in_port_id)
-
-        # Collect ports to be associated with the filter
-        apply_ports = ndb.get_active_ports_on_ofc(
-            context, filter_dict['network_id'], in_port_id)
-        ofc_pf_id = self.driver.create_filter(ofc_net_id,
-                                              filter_dict, portinfo, filter_id,
-                                              apply_ports)
+        ofc_pf_id = self.driver.create_filter(context, filter_dict, filter_id)
         self._add_ofc_item(context, "ofc_packet_filter", filter_id, ofc_pf_id)
 
     def update_ofc_packet_filter(self, context, filter_id, filter_dict):
         ofc_pf_id = self._get_ofc_id(context, "ofc_packet_filter", filter_id)
-        ofc_pf_id = self.driver.convert_ofc_filter_id(context, ofc_pf_id)
         self.driver.update_filter(ofc_pf_id, filter_dict)
 
     def exists_ofc_packet_filter(self, context, filter_id):

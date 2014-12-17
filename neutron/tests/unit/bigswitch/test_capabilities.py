@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2014 Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -14,8 +13,6 @@
 # implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# @author Kevin Benton
 
 import contextlib
 import mock

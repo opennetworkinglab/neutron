@@ -11,11 +11,9 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Kevin Benton, kevin.benton@bigswitch.com
-#
 import contextlib
 import os
+import ssl
 
 import mock
 from oslo.config import cfg
@@ -84,6 +82,7 @@ class test_ssl_certificate_base(test_plugin.NeutronDbPluginV2TestCase,
 
     def setUp(self):
         super(test_ssl_certificate_base, self).setUp(self.plugin_str)
+        self.setup_db()
 
 
 class TestSslSticky(test_ssl_certificate_base):
@@ -109,7 +108,8 @@ class TestSslSticky(test_ssl_certificate_base):
             self.getcacerts_m.assert_has_calls([mock.call(self.ca_certs_path)])
             # cert should have been fetched via SSL lib
             self.sslgetcert_m.assert_has_calls(
-                [mock.call((self.servername, 443))]
+                [mock.call((self.servername, 443),
+                           ssl_version=ssl.PROTOCOL_TLSv1)]
             )
 
             # cert should have been recorded

@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
+from oslo.serialization import jsonutils
 
 from neutron.common import exceptions as exception
 from neutron.openstack.common import log
@@ -42,7 +42,9 @@ def _build_uri_path(resource,
                     is_attachment=False,
                     extra_action=None):
     resources = resource.split('/')
-    res_path = resources[0] + (resource_id and "/%s" % resource_id or '')
+    res_path = resources[0]
+    if resource_id:
+        res_path += "/%s" % resource_id
     if len(resources) > 1:
         # There is also a parent resource to account for in the uri
         res_path = "%s/%s/%s" % (resources[1],
@@ -57,7 +59,10 @@ def _build_uri_path(resource,
     params.append(relations and "relations=%s" % relations)
     params.append(types and "types=%s" % types)
     if filters:
-        params.extend(['%s=%s' % (k, v) for (k, v) in filters.iteritems()])
+        sorted_filters = [
+            '%s=%s' % (k, filters[k]) for k in sorted(filters.keys())
+        ]
+        params.extend(sorted_filters)
     uri_path = "%s/%s" % (URI_PREFIX, res_path)
     non_empty_params = [x for x in params if x is not None]
     if non_empty_params:
@@ -95,7 +100,7 @@ def do_request(*args, **kwargs):
     try:
         res = cluster.api_client.request(*args)
         if res:
-            return json.loads(res)
+            return jsonutils.loads(res)
     except api_exc.ResourceNotFound:
         raise exception.NotFound()
     except api_exc.ReadOnlyMode:
@@ -139,4 +144,4 @@ def mk_body(**kwargs):
     :param kwargs: the key/value pirs to be dumped into a json string.
     :returns: a json string.
     """
-    return json.dumps(kwargs, ensure_ascii=False)
+    return jsonutils.dumps(kwargs, ensure_ascii=False)

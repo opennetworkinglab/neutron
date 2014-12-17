@@ -22,7 +22,9 @@ from neutron.api.v2 import base
 from neutron.api.v2 import resource
 from neutron.common import constants
 from neutron.common import exceptions
+from neutron.common import rpc as n_rpc
 from neutron.extensions import agent
+from neutron.i18n import _LE
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as service_constants
@@ -44,8 +46,8 @@ class RouterSchedulerController(wsgi.Controller):
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         if not plugin:
-            LOG.error(_('No plugin for L3 routing registered to handle '
-                        'router scheduling'))
+            LOG.error(_LE('No plugin for L3 routing registered to handle '
+                          'router scheduling'))
             msg = _('The resource could not be found.')
             raise webob.exc.HTTPNotFound(msg)
         return plugin
@@ -63,18 +65,23 @@ class RouterSchedulerController(wsgi.Controller):
         policy.enforce(request.context,
                        "create_%s" % L3_ROUTER,
                        {})
-        return plugin.add_router_to_l3_agent(
-            request.context,
-            kwargs['agent_id'],
-            body['router_id'])
+        agent_id = kwargs['agent_id']
+        router_id = body['router_id']
+        result = plugin.add_router_to_l3_agent(request.context, agent_id,
+                                               router_id)
+        notify(request.context, 'l3_agent.router.add', router_id, agent_id)
+        return result
 
     def delete(self, request, id, **kwargs):
         plugin = self.get_plugin()
         policy.enforce(request.context,
                        "delete_%s" % L3_ROUTER,
                        {})
-        return plugin.remove_router_from_l3_agent(
-            request.context, kwargs['agent_id'], id)
+        agent_id = kwargs['agent_id']
+        result = plugin.remove_router_from_l3_agent(request.context, agent_id,
+                                                    id)
+        notify(request.context, 'l3_agent.router.remove', id, agent_id)
+        return result
 
 
 class L3AgentsHostingRouterController(wsgi.Controller):
@@ -82,8 +89,8 @@ class L3AgentsHostingRouterController(wsgi.Controller):
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         if not plugin:
-            LOG.error(_('No plugin for L3 routing registered to handle '
-                        'router scheduling'))
+            LOG.error(_LE('No plugin for L3 routing registered to handle '
+                          'router scheduling'))
             msg = _('The resource could not be found.')
             raise webob.exc.HTTPNotFound(msg)
         return plugin
@@ -171,6 +178,11 @@ class RouterNotHostedByL3Agent(exceptions.Conflict):
                 " by L3 agent %(agent_id)s.")
 
 
+class RouterL3AgentMismatch(exceptions.Conflict):
+    message = _("Cannot host %(router_type)s router %(router_id)s "
+                "on %(agent_mode)s L3 agent %(agent_id)s.")
+
+
 class L3AgentSchedulerPluginBase(object):
     """REST API to operate the l3 agent scheduler.
 
@@ -192,3 +204,9 @@ class L3AgentSchedulerPluginBase(object):
     @abc.abstractmethod
     def list_l3_agents_hosting_router(self, context, router_id):
         pass
+
+
+def notify(context, action, router_id, agent_id):
+    info = {'id': agent_id, 'router_id': router_id}
+    notifier = n_rpc.get_notifier('router')
+    notifier.info(context, action, {'agent': info})

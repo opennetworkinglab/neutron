@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Big Switch Networks, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,8 +13,6 @@
 #    under the License.
 #
 # Adapted from neutron.tests.unit.test_l3_plugin
-# @author: Sumit Naiksatam, sumitnaiksatam@gmail.com
-#
 
 import contextlib
 import copy
@@ -65,6 +61,7 @@ class DHCPOptsTestCase(test_base.BigSwitchTestBase,
         self.setup_config_files()
         super(test_extradhcp.ExtraDhcpOptDBTestCase,
               self).setUp(plugin=self._plugin_name)
+        self.setup_db()
         self.startHttpPatch()
 
 
@@ -72,14 +69,20 @@ class RouterDBTestBase(test_base.BigSwitchTestBase,
                        test_l3_plugin.L3BaseForIntTests,
                        test_l3_plugin.L3NatTestCaseMixin):
 
+    mock_rescheduling = False
+
     def setUp(self):
         self.setup_patches()
         self.setup_config_files()
         ext_mgr = RouterRulesTestExtensionManager()
+        service_plugins = {'L3_ROUTER_NAT': self._l3_plugin_name}
         super(RouterDBTestBase, self).setUp(plugin=self._plugin_name,
-                                            ext_mgr=ext_mgr)
+                                            ext_mgr=ext_mgr,
+                                            service_plugins=service_plugins)
+        self.setup_db()
         cfg.CONF.set_default('allow_overlapping_ips', False)
-        self.plugin_obj = manager.NeutronManager.get_plugin()
+        self.plugin_obj = manager.NeutronManager.get_service_plugins().get(
+            'L3_ROUTER_NAT')
         self.startHttpPatch()
 
     def tearDown(self):
@@ -94,7 +97,7 @@ class RouterDBTestCase(RouterDBTestBase,
         with self.router() as r:
             with self.subnet() as s:
                 with self.subnet(cidr='10.0.10.0/24') as s1:
-                    with self.port(subnet=s1, no_delete=True) as p:
+                    with self.port(subnet=s1) as p:
                         self._router_interface_action('add',
                                                       r['router']['id'],
                                                       None,
@@ -113,7 +116,7 @@ class RouterDBTestCase(RouterDBTestBase,
     def test_router_remove_router_interface_wrong_port_returns_404(self):
         with self.router() as r:
             with self.subnet() as s:
-                with self.port(subnet=s, no_delete=True) as p:
+                with self.port(subnet=s) as p:
                     self._router_interface_action('add',
                                                   r['router']['id'],
                                                   None,
@@ -133,6 +136,23 @@ class RouterDBTestCase(RouterDBTestBase,
                                                   p['port']['id'])
                     # remove extra port created
                     self._delete('ports', p2['port']['id'])
+
+    def test_add_network_to_ext_gw_backend_body(self):
+        plugin_obj = manager.NeutronManager.get_plugin()
+        with contextlib.nested(
+            self.network(), self.router()
+        ) as (n1, r1):
+            with self.subnet(network=n1, cidr='10.10.10.10/24') as s1:
+                self._set_net_external(s1['subnet']['network_id'])
+                with mock.patch.object(plugin_obj.servers,
+                                       'rest_update_router') as upmock:
+                    self._add_external_gateway_to_router(r1['router']['id'],
+                                                         n1['network']['id'])
+        router_body = upmock.mock_calls[0][1][1]
+        self.assertEqual(
+            plugin_obj.get_network(context.get_admin_context(),
+                                   n1['network']['id']),
+            router_body['external_gateway_info']['network'])
 
     def test_multi_tenant_flip_alllocation(self):
         tenant1_id = _uuid()
@@ -259,7 +279,7 @@ class RouterDBTestCase(RouterDBTestBase,
     def test_router_remove_interface_wrong_subnet_returns_400(self):
         with self.router() as r:
             with self.subnet(cidr='10.0.10.0/24') as s:
-                with self.port(no_delete=True) as p:
+                with self.port() as p:
                     self._router_interface_action('add',
                                                   r['router']['id'],
                                                   None,
@@ -278,7 +298,7 @@ class RouterDBTestCase(RouterDBTestBase,
     def test_router_remove_interface_wrong_port_returns_404(self):
         with self.router() as r:
             with self.subnet(cidr='10.0.10.0/24'):
-                with self.port(no_delete=True) as p:
+                with self.port() as p:
                     self._router_interface_action('add',
                                                   r['router']['id'],
                                                   None,

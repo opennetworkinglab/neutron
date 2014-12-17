@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -20,27 +18,29 @@ import sys
 import mock
 from oslo.config import cfg
 import testtools
+from webob import exc
 import webtest
 
 from neutron.api import extensions
 from neutron.api.v2 import attributes
 from neutron.common import config
+from neutron.common import constants
 from neutron.common import exceptions
 from neutron import context
-from neutron.db import api as db
 from neutron.db import quota_db
 from neutron import quota
 from neutron.tests import base
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import testlib_api
+from neutron.tests.unit import testlib_plugin
 
-TARGET_PLUGIN = ('neutron.plugins.linuxbridge.lb_neutron_plugin'
-                 '.LinuxBridgePluginV2')
+TARGET_PLUGIN = 'neutron.plugins.ml2.plugin.Ml2Plugin'
 
 _get_path = test_api_v2._get_path
 
 
-class QuotaExtensionTestCase(testlib_api.WebTestCase):
+class QuotaExtensionTestCase(testlib_api.WebTestCase,
+                             testlib_plugin.PluginSetupHelper):
 
     def setUp(self):
         super(QuotaExtensionTestCase, self).setUp()
@@ -70,7 +70,6 @@ class QuotaExtensionTestCase(testlib_api.WebTestCase):
         # extra1 here is added later, so have to do it manually
         quota.QUOTAS.register_resource_by_name('extra1')
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
-        db.configure_db()
         app = config.load_paste_app('extensions_test_app')
         ext_middleware = extensions.ExtensionMiddleware(app, ext_mgr=ext_mgr)
         self.api = webtest.TestApp(ext_middleware)
@@ -78,8 +77,6 @@ class QuotaExtensionTestCase(testlib_api.WebTestCase):
     def tearDown(self):
         self.api = None
         self.plugin = None
-        db.clear_db()
-
         # Restore the global RESOURCE_ATTRIBUTE_MAP
         attributes.RESOURCE_ATTRIBUTE_MAP = self.saved_attr_map
         super(QuotaExtensionTestCase, self).tearDown()
@@ -191,6 +188,16 @@ class QuotaExtensionDbTestCase(QuotaExtensionTestCase):
                            self.serialize(quotas), extra_environ=env,
                            expect_errors=True)
         self.assertEqual(400, res.status_int)
+
+    def test_update_quotas_with_out_of_range_integer_returns_400(self):
+        tenant_id = 'tenant_id1'
+        env = {'neutron.context': context.Context('', tenant_id,
+                                                  is_admin=True)}
+        quotas = {'quota': {'network': constants.DB_INTEGER_MAX_VALUE + 1}}
+        res = self.api.put(_get_path('quotas', id=tenant_id, fmt=self.fmt),
+                           self.serialize(quotas), extra_environ=env,
+                           expect_errors=True)
+        self.assertEqual(exc.HTTPBadRequest.code, res.status_int)
 
     def test_update_quotas_to_unlimited(self):
         tenant_id = 'tenant_id1'
@@ -313,10 +320,6 @@ class QuotaExtensionDbTestCase(QuotaExtensionTestCase):
         self.assertEqual(400, res.status_int)
 
 
-class QuotaExtensionDbTestCaseXML(QuotaExtensionDbTestCase):
-    fmt = 'xml'
-
-
 class QuotaExtensionCfgTestCase(QuotaExtensionTestCase):
     fmt = 'json'
 
@@ -369,10 +372,6 @@ class QuotaExtensionCfgTestCase(QuotaExtensionTestCase):
         res = self.api.delete(_get_path('quotas', id=tenant_id, fmt=self.fmt),
                               extra_environ=env, expect_errors=True)
         self.assertEqual(403, res.status_int)
-
-
-class QuotaExtensionCfgTestCaseXML(QuotaExtensionCfgTestCase):
-    fmt = 'xml'
 
 
 class TestDbQuotaDriver(base.BaseTestCase):

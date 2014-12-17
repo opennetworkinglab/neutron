@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012, Big Switch Networks, Inc.
 # All Rights Reserved.
 #
@@ -15,8 +13,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mandeep Dhami, Big Switch Networks, Inc.
 
 """Test server mocking a REST based network ctrl.
 
@@ -24,9 +20,9 @@ Used for NeutronRestProxy tests
 """
 from __future__ import print_function
 
-import json
 import re
 
+from oslo.serialization import jsonutils
 from six import moves
 from wsgiref import simple_server
 
@@ -48,12 +44,12 @@ class TestNetworkCtrl(object):
 
     def match(self, prior, method_regexp, uri_regexp, handler, data=None,
               multi=True):
-        """Add to the list of exptected inputs.
+        """Add to the list of expected inputs.
 
         The incoming request is matched in the order of priority. For same
         priority, match the oldest match request first.
 
-        :param prior: intgere priority of this match (e.g. 100)
+        :param prior: integer priority of this match (e.g. 100)
         :param method_regexp: regexp to match method (e.g. 'PUT|POST')
         :param uri_regexp: regexp to match uri (e.g. '/quantum/v?.?/')
         :param handler: function with signature:
@@ -78,7 +74,7 @@ class TestNetworkCtrl(object):
         lo, hi = 0, len(self.matches)
         while lo < hi:
             mid = (lo + hi) // 2
-            if prior < self.matches[mid]:
+            if prior < self.matches[mid][0]:
                 hi = mid
             else:
                 lo = mid + 1
@@ -94,8 +90,8 @@ class TestNetworkCtrl(object):
         retstatus = self.default_status
         retbody = self.default_response
         for i in moves.xrange(len(self.matches)):
-            (prior, method_regexp, uri_regexp, handler, data, multi) = \
-                self.matches[i]
+            (unused_prior, method_regexp, uri_regexp, handler, data,
+             multi) = self.matches[i]
             if re.match(method_regexp, method) and re.match(uri_regexp, uri):
                 kwargs = {
                     'data': data,
@@ -124,7 +120,7 @@ class TestNetworkCtrl(object):
                 request_data = environ.get('wsgi.input').read(content_len)
                 if request_data:
                     try:
-                        request_data = json.loads(request_data)
+                        request_data = jsonutils.loads(request_data)
                     except Exception:
                         # OK for it not to be json! Ignore it
                         pass
@@ -139,13 +135,14 @@ class TestNetworkCtrl(object):
                 print('%s %s' % (method, uri))
                 if request_data:
                     print('%s' %
-                          json.dumps(request_data, sort_keys=True, indent=4))
+                          jsonutils.dumps(
+                              request_data, sort_keys=True, indent=4))
 
             status, body = self.request_handler(method, uri, None)
             body_data = None
             if body:
                 try:
-                    body_data = json.loads(body)
+                    body_data = jsonutils.loads(body)
                 except Exception:
                     # OK for it not to be json! Ignore it
                     pass
@@ -154,7 +151,8 @@ class TestNetworkCtrl(object):
             if self.debug:
                 if self.debug_env:
                     print('%s: %s' % ('Response',
-                          json.dumps(body_data, sort_keys=True, indent=4)))
+                          jsonutils.dumps(
+                              body_data, sort_keys=True, indent=4)))
             return body
         return simple_server.make_server(self.host, self.port, app)
 

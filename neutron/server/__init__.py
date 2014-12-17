@@ -18,26 +18,24 @@
 # If ../neutron/__init__.py exists, add ../ to Python search path, so that
 # it will override what happens to be installed in /usr/(local/)lib/python...
 
-import eventlet
 import sys
+
+import eventlet
+eventlet.monkey_patch()
 
 from oslo.config import cfg
 
 from neutron.common import config
-from neutron import service
-
-from neutron.openstack.common import gettextutils
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
-gettextutils.install('neutron', lazy=True)
+from neutron import service
 
 LOG = logging.getLogger(__name__)
 
 
 def main():
-    eventlet.monkey_patch()
-
     # the configuration will be read into the cfg.CONF global data structure
-    config.parse(sys.argv[1:])
+    config.init(sys.argv[1:])
     if not cfg.CONF.config_file:
         sys.exit(_("ERROR: Unable to find configuration file via the default"
                    " search paths (~/.neutron/, ~/, /etc/neutron/, /etc/) and"
@@ -51,7 +49,8 @@ def main():
         try:
             neutron_rpc = service.serve_rpc()
         except NotImplementedError:
-            LOG.info(_("RPC was already started in parent process by plugin."))
+            LOG.info(_LI("RPC was already started in parent process by "
+                         "plugin."))
         else:
             rpc_thread = pool.spawn(neutron_rpc.wait)
 

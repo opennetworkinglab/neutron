@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -19,15 +17,17 @@ import abc
 
 import netaddr
 from oslo.config import cfg
+from oslo.utils import importutils
 import six
 
 from neutron.agent.common import config
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import ovs_lib
 from neutron.agent.linux import utils
+from neutron.common import constants as n_const
 from neutron.common import exceptions
 from neutron.extensions import flavor
-from neutron.openstack.common import importutils
+from neutron.i18n import _LE, _LI
 from neutron.openstack.common import log as logging
 
 
@@ -43,7 +43,11 @@ OPTS = [
     cfg.IntOpt('network_device_mtu',
                help=_('MTU setting for device.')),
     cfg.StrOpt('meta_flavor_driver_mappings',
-               help=_('Mapping between flavor and LinuxInterfaceDriver')),
+               help=_('Mapping between flavor and LinuxInterfaceDriver. '
+                      'It is specific to MetaInterfaceDriver used with '
+                      'admin_user, admin_password, admin_tenant_name, '
+                      'admin_url, auth_strategy, auth_region and '
+                      'endpoint_type.')),
     cfg.StrOpt('admin_user',
                help=_("Admin username")),
     cfg.StrOpt('admin_password',
@@ -57,6 +61,10 @@ OPTS = [
                help=_("The type of authentication to use")),
     cfg.StrOpt('auth_region',
                help=_("Authentication region")),
+    cfg.StrOpt('endpoint_type',
+               default='publicURL',
+               help=_("Network service endpoint type to pull from "
+                      "the keystone catalog")),
 ]
 
 
@@ -65,7 +73,7 @@ class LinuxInterfaceDriver(object):
 
     # from linux IF_NAMESIZE
     DEV_NAME_LEN = 14
-    DEV_NAME_PREFIX = 'tap'
+    DEV_NAME_PREFIX = n_const.TAP_DEVICE_PREFIX
 
     def __init__(self, conf):
         self.conf = conf
@@ -104,6 +112,9 @@ class LinuxInterfaceDriver(object):
         for ip_cidr, ip_version in previous.items():
             if ip_cidr not in preserve_ips:
                 device.addr.delete(ip_version, ip_cidr)
+                self.delete_conntrack_state(root_helper=self.root_helper,
+                                            namespace=namespace,
+                                            ip=ip_cidr)
 
         if gateway:
             device.route.add_gateway(gateway)
@@ -114,6 +125,43 @@ class LinuxInterfaceDriver(object):
             device.route.add_onlink_route(route)
         for route in existing_onlink_routes - new_onlink_routes:
             device.route.delete_onlink_route(route)
+
+    def delete_conntrack_state(self, root_helper, namespace, ip):
+        """Delete conntrack state associated with an IP address.
+
+        This terminates any active connections through an IP.  Call this soon
+        after removing the IP address from an interface so that new connections
+        cannot be created before the IP address is gone.
+
+        root_helper: root_helper to gain root access to call conntrack
+        namespace: the name of the namespace where the IP has been configured
+        ip: the IP address for which state should be removed.  This can be
+            passed as a string with or without /NN.  A netaddr.IPAddress or
+            netaddr.Network representing the IP address can also be passed.
+        """
+        ip_str = str(netaddr.IPNetwork(ip).ip)
+        ip_wrapper = ip_lib.IPWrapper(root_helper, namespace=namespace)
+
+        # Delete conntrack state for ingress traffic
+        # If 0 flow entries have been deleted
+        # conntrack -D will return 1
+        try:
+            ip_wrapper.netns.execute(["conntrack", "-D", "-d", ip_str],
+                                     check_exit_code=True,
+                                     extra_ok_codes=[1])
+
+        except RuntimeError:
+            LOG.exception(_LE("Failed deleting ingress connection state of"
+                              " floatingip %s"), ip_str)
+
+        # Delete conntrack state for egress traffic
+        try:
+            ip_wrapper.netns.execute(["conntrack", "-D", "-q", ip_str],
+                                     check_exit_code=True,
+                                     extra_ok_codes=[1])
+        except RuntimeError:
+            LOG.exception(_LE("Failed deleting egress connection state of"
+                              " floatingip %s"), ip_str)
 
     def check_bridge_exists(self, bridge):
         if not ip_lib.device_exists(bridge):
@@ -144,7 +192,7 @@ class NullDriver(LinuxInterfaceDriver):
 class OVSInterfaceDriver(LinuxInterfaceDriver):
     """Driver for creating an internal interface on an OVS bridge."""
 
-    DEV_NAME_PREFIX = 'tap'
+    DEV_NAME_PREFIX = n_const.TAP_DEVICE_PREFIX
 
     def __init__(self, conf):
         super(OVSInterfaceDriver, self).__init__(conf)
@@ -153,22 +201,20 @@ class OVSInterfaceDriver(LinuxInterfaceDriver):
 
     def _get_tap_name(self, dev_name, prefix=None):
         if self.conf.ovs_use_veth:
-            dev_name = dev_name.replace(prefix or self.DEV_NAME_PREFIX, 'tap')
+            dev_name = dev_name.replace(prefix or self.DEV_NAME_PREFIX,
+                                        n_const.TAP_DEVICE_PREFIX)
         return dev_name
 
     def _ovs_add_port(self, bridge, device_name, port_id, mac_address,
                       internal=True):
-        cmd = ['ovs-vsctl', '--', '--if-exists', 'del-port', device_name, '--',
-               'add-port', bridge, device_name]
+        attrs = [('external-ids:iface-id', port_id),
+                 ('external-ids:iface-status', 'active'),
+                 ('external-ids:attached-mac', mac_address)]
         if internal:
-            cmd += ['--', 'set', 'Interface', device_name, 'type=internal']
-        cmd += ['--', 'set', 'Interface', device_name,
-                'external-ids:iface-id=%s' % port_id,
-                '--', 'set', 'Interface', device_name,
-                'external-ids:iface-status=active',
-                '--', 'set', 'Interface', device_name,
-                'external-ids:attached-mac=%s' % mac_address]
-        utils.execute(cmd, self.root_helper)
+            attrs.insert(0, ('type', 'internal'))
+
+        ovs = ovs_lib.OVSBridge(bridge, self.root_helper)
+        ovs.replace_port(device_name, *attrs)
 
     def plug(self, network_id, port_id, device_name, mac_address,
              bridge=None, namespace=None, prefix=None):
@@ -213,7 +259,7 @@ class OVSInterfaceDriver(LinuxInterfaceDriver):
             if self.conf.ovs_use_veth:
                 root_dev.link.set_up()
         else:
-            LOG.info(_("Device %s already exists"), device_name)
+            LOG.info(_LI("Device %s already exists"), device_name)
 
     def unplug(self, device_name, bridge=None, namespace=None, prefix=None):
         """Unplug the interface."""
@@ -231,9 +277,9 @@ class OVSInterfaceDriver(LinuxInterfaceDriver):
                                          self.root_helper,
                                          namespace)
                 device.link.delete()
-                LOG.debug(_("Unplugged interface '%s'"), device_name)
+                LOG.debug("Unplugged interface '%s'", device_name)
         except RuntimeError:
-            LOG.error(_("Failed unplugging interface '%s'"),
+            LOG.error(_LE("Failed unplugging interface '%s'"),
                       device_name)
 
 
@@ -248,7 +294,8 @@ class MidonetInterfaceDriver(LinuxInterfaceDriver):
                                     self.root_helper,
                                     namespace=namespace):
             ip = ip_lib.IPWrapper(self.root_helper)
-            tap_name = device_name.replace(prefix or 'tap', 'tap')
+            tap_name = device_name.replace(prefix or n_const.TAP_DEVICE_PREFIX,
+                                           n_const.TAP_DEVICE_PREFIX)
 
             # Create ns_dev in a namespace if one is configured.
             root_dev, ns_dev = ip.add_veth(tap_name, device_name,
@@ -267,7 +314,7 @@ class MidonetInterfaceDriver(LinuxInterfaceDriver):
             utils.execute(cmd, self.root_helper)
 
         else:
-            LOG.info(_("Device %s already exists"), device_name)
+            LOG.info(_LI("Device %s already exists"), device_name)
 
     def unplug(self, device_name, bridge=None, namespace=None, prefix=None):
         # the port will be deleted by the dhcp agent that will call the plugin
@@ -277,8 +324,8 @@ class MidonetInterfaceDriver(LinuxInterfaceDriver):
         try:
             device.link.delete()
         except RuntimeError:
-            LOG.error(_("Failed unplugging interface '%s'"), device_name)
-        LOG.debug(_("Unplugged interface '%s'"), device_name)
+            LOG.error(_LE("Failed unplugging interface '%s'"), device_name)
+        LOG.debug("Unplugged interface '%s'", device_name)
 
         ip_lib.IPWrapper(
             self.root_helper, namespace).garbage_collect_namespace()
@@ -287,14 +334,15 @@ class MidonetInterfaceDriver(LinuxInterfaceDriver):
 class IVSInterfaceDriver(LinuxInterfaceDriver):
     """Driver for creating an internal interface on an IVS bridge."""
 
-    DEV_NAME_PREFIX = 'tap'
+    DEV_NAME_PREFIX = n_const.TAP_DEVICE_PREFIX
 
     def __init__(self, conf):
         super(IVSInterfaceDriver, self).__init__(conf)
         self.DEV_NAME_PREFIX = 'ns-'
 
     def _get_tap_name(self, dev_name, prefix=None):
-        dev_name = dev_name.replace(prefix or self.DEV_NAME_PREFIX, 'tap')
+        dev_name = dev_name.replace(prefix or self.DEV_NAME_PREFIX,
+                                    n_const.TAP_DEVICE_PREFIX)
         return dev_name
 
     def _ivs_add_port(self, device_name, port_id, mac_address):
@@ -329,7 +377,7 @@ class IVSInterfaceDriver(LinuxInterfaceDriver):
             ns_dev.link.set_up()
             root_dev.link.set_up()
         else:
-            LOG.info(_("Device %s already exists"), device_name)
+            LOG.info(_LI("Device %s already exists"), device_name)
 
     def unplug(self, device_name, bridge=None, namespace=None, prefix=None):
         """Unplug the interface."""
@@ -341,9 +389,9 @@ class IVSInterfaceDriver(LinuxInterfaceDriver):
                                      self.root_helper,
                                      namespace)
             device.link.delete()
-            LOG.debug(_("Unplugged interface '%s'"), device_name)
+            LOG.debug("Unplugged interface '%s'", device_name)
         except RuntimeError:
-            LOG.error(_("Failed unplugging interface '%s'"),
+            LOG.error(_LE("Failed unplugging interface '%s'"),
                       device_name)
 
 
@@ -361,10 +409,8 @@ class BridgeInterfaceDriver(LinuxInterfaceDriver):
             ip = ip_lib.IPWrapper(self.root_helper)
 
             # Enable agent to define the prefix
-            if prefix:
-                tap_name = device_name.replace(prefix, 'tap')
-            else:
-                tap_name = device_name.replace(self.DEV_NAME_PREFIX, 'tap')
+            tap_name = device_name.replace(prefix or self.DEV_NAME_PREFIX,
+                                        n_const.TAP_DEVICE_PREFIX)
             # Create ns_veth in a namespace if one is configured.
             root_veth, ns_veth = ip.add_veth(tap_name, device_name,
                                              namespace2=namespace)
@@ -378,16 +424,16 @@ class BridgeInterfaceDriver(LinuxInterfaceDriver):
             ns_veth.link.set_up()
 
         else:
-            LOG.info(_("Device %s already exists"), device_name)
+            LOG.info(_LI("Device %s already exists"), device_name)
 
     def unplug(self, device_name, bridge=None, namespace=None, prefix=None):
         """Unplug the interface."""
         device = ip_lib.IPDevice(device_name, self.root_helper, namespace)
         try:
             device.link.delete()
-            LOG.debug(_("Unplugged interface '%s'"), device_name)
+            LOG.debug("Unplugged interface '%s'", device_name)
         except RuntimeError:
-            LOG.error(_("Failed unplugging interface '%s'"),
+            LOG.error(_LE("Failed unplugging interface '%s'"),
                       device_name)
 
 
@@ -401,7 +447,8 @@ class MetaInterfaceDriver(LinuxInterfaceDriver):
             tenant_name=self.conf.admin_tenant_name,
             auth_url=self.conf.auth_url,
             auth_strategy=self.conf.auth_strategy,
-            region_name=self.conf.auth_region
+            region_name=self.conf.auth_region,
+            endpoint_type=self.conf.endpoint_type
         )
         self.flavor_driver_map = {}
         for net_flavor, driver_name in [
@@ -445,6 +492,6 @@ class MetaInterfaceDriver(LinuxInterfaceDriver):
         return driver.unplug(device_name, bridge, namespace, prefix)
 
     def _load_driver(self, driver_provider):
-        LOG.debug(_("Driver location: %s"), driver_provider)
+        LOG.debug("Driver location: %s", driver_provider)
         plugin_klass = importutils.import_class(driver_provider)
         return plugin_klass(self.conf)

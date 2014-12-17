@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2012 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,9 +11,10 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Ryota MIBU
 
-from neutron.openstack.common import importutils
+from oslo.utils import importutils
+
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
 
 
@@ -35,6 +34,6 @@ DRIVER_LIST = {
 
 
 def get_driver(driver_name):
-    LOG.info(_("Loading OFC driver: %s"), driver_name)
+    LOG.info(_LI("Loading OFC driver: %s"), driver_name)
     driver_klass = DRIVER_LIST.get(driver_name) or driver_name
     return importutils.import_class(driver_klass)

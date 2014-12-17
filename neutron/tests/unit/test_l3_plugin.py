@@ -20,32 +20,36 @@ import copy
 import mock
 import netaddr
 from oslo.config import cfg
+from oslo.utils import importutils
 from webob import exc
 
+from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
+from neutron.api.rpc.handlers import l3_rpc
 from neutron.api.v2 import attributes
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron import context
-from neutron.db import api as qdbapi
+from neutron.db import common_db_mixin
 from neutron.db import db_base_plugin_v2
 from neutron.db import external_net_db
 from neutron.db import l3_agentschedulers_db
+from neutron.db import l3_attrs_db
 from neutron.db import l3_db
-from neutron.db import l3_rpc_base
-from neutron.db import model_base
+from neutron.db import l3_dvr_db
 from neutron.extensions import external_net
 from neutron.extensions import l3
+from neutron.extensions import portbindings
 from neutron import manager
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common.notifier import test_notifier
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants as service_constants
+from neutron.tests import base
+from neutron.tests import fake_notifier
 from neutron.tests.unit import test_agent_ext_plugin
 from neutron.tests.unit import test_api_v2
 from neutron.tests.unit import test_api_v2_extension
 from neutron.tests.unit import test_db_plugin
-
+from neutron.tests.unit import testlib_plugin
 
 LOG = logging.getLogger(__name__)
 
@@ -210,10 +214,6 @@ class L3NatExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
         self.assertEqual(res['subnet_id'], subnet_id)
 
 
-class L3NatExtensionTestCaseXML(L3NatExtensionTestCase):
-    fmt = 'xml'
-
-
 # This base plugin class is for tests.
 class TestL3NatBasePlugin(db_base_plugin_v2.NeutronDbPluginV2,
                           external_net_db.External_net_db_mixin):
@@ -283,13 +283,11 @@ class TestNoL3NatPlugin(TestL3NatBasePlugin):
 
 # A L3 routing service plugin class for tests with plugins that
 # delegate away L3 routing functionality
-class TestL3NatServicePlugin(db_base_plugin_v2.CommonDbMixin,
+class TestL3NatServicePlugin(common_db_mixin.CommonDbMixin,
+                             l3_dvr_db.L3_NAT_with_dvr_db_mixin,
                              l3_db.L3_NAT_db_mixin):
 
     supported_extension_aliases = ["router"]
-
-    def __init__(self):
-        qdbapi.register_models(base=model_base.BASEV2)
 
     def get_plugin_type(self):
         return service_constants.L3_ROUTER_NAT
@@ -305,6 +303,26 @@ class TestL3NatAgentSchedulingServicePlugin(TestL3NatServicePlugin,
                                             L3AgentSchedulerDbMixin):
 
     supported_extension_aliases = ["router", "l3_agent_scheduler"]
+
+    def __init__(self):
+        super(TestL3NatAgentSchedulingServicePlugin, self).__init__()
+        self.router_scheduler = importutils.import_object(
+            cfg.CONF.router_scheduler_driver)
+        self.agent_notifiers.update(
+            {l3_constants.AGENT_TYPE_L3: l3_rpc_agent_api.L3AgentNotifyAPI()})
+
+
+class L3NATdbonlyMixinTestCase(base.BaseTestCase):
+
+    def setUp(self):
+        super(L3NATdbonlyMixinTestCase, self).setUp()
+        self.mixin = l3_db.L3_NAT_dbonly_mixin()
+
+    def test_build_routers_list_with_gw_port_mismatch(self):
+        routers = [{'gw_port_id': 'foo_gw_port_id', 'id': 'foo_router_id'}]
+        gw_ports = {}
+        routers = self.mixin._build_routers_list(mock.ANY, routers, gw_ports)
+        self.assertIsNone(routers[0].get('gw_port'))
 
 
 class L3NatTestCaseMixin(object):
@@ -455,7 +473,7 @@ class L3NatTestCaseMixin(object):
                         public_sub['subnet']['network_id'],
                         port_id=private_port['port']['id'],
                         fixed_ip=fixed_ip,
-                        set_context=False)
+                        set_context=set_context)
                     yield floatingip
 
                     if floatingip:
@@ -505,6 +523,57 @@ class L3NatTestCaseMixin(object):
                 private_sub, fmt, set_context, public_sub) as (f, r):
                 # Yield only the floating ip object
                 yield f
+
+
+class ExtraAttributesMixinTestCase(base.BaseTestCase):
+
+    def setUp(self):
+        super(ExtraAttributesMixinTestCase, self).setUp()
+        self.mixin = l3_attrs_db.ExtraAttributesMixin()
+
+    def _test__extend_extra_router_dict(
+        self, extra_attributes, attributes, expected_attributes):
+        self.mixin._extend_extra_router_dict(
+            attributes, {'extra_attributes': extra_attributes})
+        self.assertEqual(expected_attributes, attributes)
+
+    def test__extend_extra_router_dict_string_default(self):
+        self.mixin.extra_attributes = [{
+            'name': "foo_key",
+            'default': 'foo_default'
+        }]
+        extension_attributes = {'foo_key': 'my_fancy_value'}
+        self._test__extend_extra_router_dict(
+            extension_attributes, {}, extension_attributes)
+
+    def test__extend_extra_router_dict_booleans_false_default(self):
+        self.mixin.extra_attributes = [{
+            'name': "foo_key",
+            'default': False
+        }]
+        extension_attributes = {'foo_key': True}
+        self._test__extend_extra_router_dict(
+            extension_attributes, {}, extension_attributes)
+
+    def test__extend_extra_router_dict_booleans_true_default(self):
+        self.mixin.extra_attributes = [{
+            'name': "foo_key",
+            'default': True
+        }]
+        # Test that the default is overridden
+        extension_attributes = {'foo_key': False}
+        self._test__extend_extra_router_dict(
+            extension_attributes, {}, extension_attributes)
+
+    def test__extend_extra_router_dict_no_extension_attributes(self):
+        self.mixin.extra_attributes = [{
+            'name': "foo_key",
+            'default': 'foo_value'
+        }]
+        self._test__extend_extra_router_dict({}, {}, {'foo_key': 'foo_value'})
+
+    def test__extend_extra_router_dict_none_extension_attributes(self):
+        self._test__extend_extra_router_dict(None, {}, {})
 
 
 class L3NatTestCaseBase(L3NatTestCaseMixin):
@@ -660,7 +729,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                              'subnet.create.end',
                              'router.interface.create',
                              'router.interface.delete']
-        test_notifier.NOTIFICATIONS = []
+        fake_notifier.reset()
         with self.router() as r:
             with self.subnet() as s:
                 body = self._router_interface_action('add',
@@ -683,9 +752,9 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
 
                 self.assertEqual(
                     set(exp_notifications),
-                    set(n['event_type'] for n in test_notifier.NOTIFICATIONS))
+                    set(n['event_type'] for n in fake_notifier.NOTIFICATIONS))
 
-                for n in test_notifier.NOTIFICATIONS:
+                for n in fake_notifier.NOTIFICATIONS:
                     if n['event_type'].startswith('router.interface.'):
                         payload = n['payload']['router_interface']
                         self.assertIn('id', payload)
@@ -695,6 +764,17 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                         # tolerate subnet tenant deliberately to '' in the
                         # nsx metadata access case
                         self.assertIn(payload['tenant_id'], [stid, ''])
+
+    def test_router_add_interface_ipv6_subnet_without_gateway_ip(self):
+        with self.router() as r:
+            with self.subnet(ip_version=6, cidr='fe80::/64',
+                             gateway_ip=None) as s:
+                error_code = exc.HTTPBadRequest.code
+                self._router_interface_action('add',
+                                              r['router']['id'],
+                                              s['subnet']['id'],
+                                              None,
+                                              expected_code=error_code)
 
     def test_router_add_interface_subnet_with_bad_tenant_returns_404(self):
         with mock.patch('neutron.context.Context.to_dict') as tdict:
@@ -768,7 +848,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
 
     def test_router_add_interface_port(self):
         with self.router() as r:
-            with self.port(no_delete=True) as p:
+            with self.port() as p:
                 body = self._router_interface_action('add',
                                                      r['router']['id'],
                                                      None,
@@ -786,6 +866,13 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                                               None,
                                               p['port']['id'])
 
+    def test_router_add_interface_empty_port_and_subnet_ids(self):
+        with self.router() as r:
+            self._router_interface_action('add', r['router']['id'],
+                                          None, None,
+                                          expected_code=exc.
+                                          HTTPBadRequest.code)
+
     def test_router_add_interface_port_bad_tenant_returns_404(self):
         with mock.patch('neutron.context.Context.to_dict') as tdict:
             admin_context = {'roles': ['admin']}
@@ -793,7 +880,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                               'roles': []}
             tdict.return_value = admin_context
             with self.router() as r:
-                with self.port(no_delete=True) as p:
+                with self.port() as p:
                     tdict.return_value = tenant_context
                     err_code = exc.HTTPNotFound.code
                     self._router_interface_action('add',
@@ -842,7 +929,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
     def test_router_add_interface_dup_subnet2_returns_400(self):
         with self.router() as r:
             with self.subnet() as s:
-                with self.port(subnet=s, no_delete=True) as p1:
+                with self.port(subnet=s) as p1:
                     with self.port(subnet=s) as p2:
                         self._router_interface_action('add',
                                                       r['router']['id'],
@@ -880,8 +967,6 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                 try_overlapped_cidr('10.0.1.0/24')
                 # another subnet with overlapped cidr including s1
                 try_overlapped_cidr('10.0.0.0/16')
-                # another subnet with overlapped cidr included by s1
-                try_overlapped_cidr('10.0.1.1/32')
                 # clean-up
                 self._router_interface_action('remove',
                                               r['router']['id'],
@@ -1024,11 +1109,17 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                             'remove', tenant_router['router']['id'],
                             s['subnet']['id'], None, tenant_id='tenant_a')
 
-    def test_router_add_gateway_invalid_network_returns_404(self):
+    def test_router_add_gateway_invalid_network_returns_400(self):
         with self.router() as r:
             self._add_external_gateway_to_router(
                 r['router']['id'],
-                "foobar", expected_code=exc.HTTPNotFound.code)
+                "foobar", expected_code=exc.HTTPBadRequest.code)
+
+    def test_router_add_gateway_non_existent_network_returns_404(self):
+        with self.router() as r:
+            self._add_external_gateway_to_router(
+                r['router']['id'],
+                _uuid(), expected_code=exc.HTTPNotFound.code)
 
     def test_router_add_gateway_net_not_external_returns_400(self):
         with self.router() as r:
@@ -1066,7 +1157,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
     def test_router_remove_interface_wrong_subnet_returns_400(self):
         with self.router() as r:
             with self.subnet() as s:
-                with self.port(no_delete=True) as p:
+                with self.port() as p:
                     self._router_interface_action('add',
                                                   r['router']['id'],
                                                   None,
@@ -1084,7 +1175,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
 
     def test_router_remove_interface_returns_200(self):
         with self.router() as r:
-            with self.port(no_delete=True) as p:
+            with self.port() as p:
                 body = self._router_interface_action('add',
                                                      r['router']['id'],
                                                      None,
@@ -1098,7 +1189,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
     def test_router_remove_interface_wrong_port_returns_404(self):
         with self.router() as r:
             with self.subnet():
-                with self.port(no_delete=True) as p:
+                with self.port() as p:
                     self._router_interface_action('add',
                                                   r['router']['id'],
                                                   None,
@@ -1222,7 +1313,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
         self._show('floatingips', fip['floatingip']['id'],
                    expected_code=exc.HTTPNotFound.code)
 
-    def _test_floatingip_with_assoc_fails(self, plugin_class):
+    def _test_floatingip_with_assoc_fails(self, plugin_method):
         with self.subnet(cidr='200.0.0.0/24') as public_sub:
             self._set_net_external(public_sub['subnet']['network_id'])
             with self.port() as private_port:
@@ -1235,8 +1326,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                     self._router_interface_action('add', r['router']['id'],
                                                   private_sub['subnet']['id'],
                                                   None)
-                    method = plugin_class + '._update_fip_assoc'
-                    with mock.patch(method) as pl:
+                    with mock.patch(plugin_method) as pl:
                         pl.side_effect = n_exc.BadRequest(
                             resource='floatingip',
                             msg='fake_error')
@@ -1259,43 +1349,19 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
 
     def test_floatingip_with_assoc_fails(self):
         self._test_floatingip_with_assoc_fails(
-            'neutron.db.l3_db.L3_NAT_db_mixin')
+            'neutron.db.l3_db.L3_NAT_db_mixin._check_and_get_fip_assoc')
 
-    def _test_floatingip_with_ip_generation_failure(self, plugin_class):
-        with self.subnet(cidr='200.0.0.0/24') as public_sub:
-            self._set_net_external(public_sub['subnet']['network_id'])
-            with self.port() as private_port:
-                with self.router() as r:
-                    sid = private_port['port']['fixed_ips'][0]['subnet_id']
-                    private_sub = {'subnet': {'id': sid}}
-                    self._add_external_gateway_to_router(
-                        r['router']['id'],
-                        public_sub['subnet']['network_id'])
-                    self._router_interface_action('add', r['router']['id'],
-                                                  private_sub['subnet']['id'],
-                                                  None)
-                    method = plugin_class + '._update_fip_assoc'
-                    with mock.patch(method) as pl:
-                        pl.side_effect = n_exc.IpAddressGenerationFailure(
-                            net_id='netid')
-                        res = self._create_floatingip(
-                            self.fmt,
-                            public_sub['subnet']['network_id'],
-                            port_id=private_port['port']['id'])
-                        self.assertEqual(res.status_int, exc.HTTPConflict.code)
-
-                    for p in self._list('ports')['ports']:
-                        if (p['device_owner'] ==
-                            l3_constants.DEVICE_OWNER_FLOATINGIP):
-                            self.fail('garbage port is not deleted')
-
-                    self._remove_external_gateway_from_router(
-                        r['router']['id'],
-                        public_sub['subnet']['network_id'])
-                    self._router_interface_action('remove',
-                                                  r['router']['id'],
-                                                  private_sub['subnet']['id'],
-                                                  None)
+    def test_create_floatingip_with_assoc(
+        self, expected_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
+        with self.floatingip_with_assoc() as fip:
+            body = self._show('floatingips', fip['floatingip']['id'])
+            self.assertEqual(body['floatingip']['id'],
+                             fip['floatingip']['id'])
+            self.assertEqual(body['floatingip']['port_id'],
+                             fip['floatingip']['port_id'])
+            self.assertEqual(expected_status, body['floatingip']['status'])
+            self.assertIsNotNone(body['floatingip']['fixed_ip_address'])
+            self.assertIsNotNone(body['floatingip']['router_id'])
 
     def test_floatingip_update(
         self, expected_status=l3_constants.FLOATINGIP_STATUS_ACTIVE):
@@ -1365,7 +1431,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                         self.assertEqual(
                             body['floatingip']['port_id'],
                             fip2['floatingip']['port_id'])
-
+                    self._delete('ports', p['port']['id'])
                     # Test that port has been successfully deleted.
                     body = self._show('ports', p['port']['id'],
                                       expected_code=exc.HTTPNotFound.code)
@@ -1470,16 +1536,6 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                         fip2_r2_res = associate_and_assert(fip2, p2)
                         self.assertEqual(fip2_r2_res, r2['router']['id'])
 
-    def test_floatingip_with_assoc(self):
-        with self.floatingip_with_assoc() as fip:
-            body = self._show('floatingips', fip['floatingip']['id'])
-            self.assertEqual(body['floatingip']['id'],
-                             fip['floatingip']['id'])
-            self.assertEqual(body['floatingip']['port_id'],
-                             fip['floatingip']['port_id'])
-            self.assertIsNotNone(body['floatingip']['fixed_ip_address'])
-            self.assertIsNotNone(body['floatingip']['router_id'])
-
     def test_floatingip_port_delete(self):
         with self.subnet() as private_sub:
             with self.floatingip_no_assoc(private_sub) as fip:
@@ -1490,6 +1546,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                 # note: once this port goes out of scope, the port will be
                 # deleted, which is what we want to test. We want to confirm
                 # that the fields are set back to None
+                self._delete('ports', p['port']['id'])
                 body = self._show('floatingips', fip['floatingip']['id'])
                 self.assertEqual(body['floatingip']['id'],
                                  fip['floatingip']['id'])
@@ -1735,7 +1792,7 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
         with self.network() as net:
             net_id = net['network']['id']
             self._set_net_external(net_id)
-            with self.subnet(network=net, do_delete=False):
+            with self.subnet(network=net):
                 self._make_floatingip(self.fmt, net_id)
 
 
@@ -1745,7 +1802,7 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
 
     def test_l3_agent_routers_query_interfaces(self):
         with self.router() as r:
-            with self.port(no_delete=True) as p:
+            with self.port() as p:
                 self._router_interface_action('add',
                                               r['router']['id'],
                                               None,
@@ -1769,7 +1826,6 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
         with self.router() as r:
             with self.subnet(cidr='9.0.1.0/24') as subnet:
                 with self.port(subnet=subnet,
-                               no_delete=True,
                                fixed_ips=[{'ip_address': '9.0.1.3'}]) as p:
                     self._router_interface_action('add',
                                                   r['router']['id'],
@@ -1857,7 +1913,7 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
         self._test_notify_op_agent(self._test_router_gateway_op_agent)
 
     def _test_interfaces_op_agent(self, r, notifyApi):
-        with self.port(no_delete=True) as p:
+        with self.port() as p:
             self._router_interface_action('add',
                                           r['router']['id'],
                                           None,
@@ -1885,7 +1941,8 @@ class L3AgentDbTestCaseBase(L3NatTestCaseMixin):
         self._test_notify_op_agent(self._test_floatingips_op_agent)
 
 
-class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
+class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase,
+                        testlib_plugin.NotificationSetupHelper):
 
     mock_rescheduling = True
 
@@ -1897,9 +1954,8 @@ class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
         ext_mgr = ext_mgr or L3TestExtensionManager()
 
         if self.mock_rescheduling:
-            rescheduling_patcher = mock.patch(
-                '%s._check_router_needs_rescheduling' % plugin)
-            rescheduling_patcher.start().return_value = False
+            mock.patch('%s._check_router_needs_rescheduling' % plugin,
+                       new=lambda *a: False).start()
 
         super(L3BaseForIntTests, self).setUp(plugin=plugin, ext_mgr=ext_mgr,
                                              service_plugins=service_plugins)
@@ -1907,7 +1963,8 @@ class L3BaseForIntTests(test_db_plugin.NeutronDbPluginV2TestCase):
         self.setup_notification_driver()
 
 
-class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase):
+class L3BaseForSepTests(test_db_plugin.NeutronDbPluginV2TestCase,
+                        testlib_plugin.NotificationSetupHelper):
 
     def setUp(self, plugin=None, ext_mgr=None):
         # the plugin without L3 support
@@ -1956,15 +2013,15 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
                                self.subnet(),
                                self.subnet()) as (r, s1, s2):
             self._set_net_external(s1['subnet']['network_id'])
-            l3_rpc = l3_rpc_base.L3RpcCallbackMixin()
+            l3_rpc_cb = l3_rpc.L3RpcCallback()
             self._register_one_l3_agent(
                 host='host1',
                 ext_net_id=s1['subnet']['network_id'])
             self._register_one_l3_agent(
                 host='host2', internal_only=False,
                 ext_net_id=s2['subnet']['network_id'])
-            l3_rpc.sync_routers(self.adminContext,
-                                host='host1')
+            l3_rpc_cb.sync_routers(self.adminContext,
+                                   host='host1')
             self._assert_router_on_agent(r['router']['id'], 'host1')
 
             self._add_external_gateway_to_router(
@@ -1987,15 +2044,15 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
                                self.subnet(),
                                self.subnet()) as (r, s1, s2):
             self._set_net_external(s1['subnet']['network_id'])
-            l3_rpc = l3_rpc_base.L3RpcCallbackMixin()
+            l3_rpc_cb = l3_rpc.L3RpcCallback()
             self._register_one_l3_agent(
                 host='host1',
                 ext_net_id=s1['subnet']['network_id'])
             self._register_one_l3_agent(
                 host='host2', internal_only=False,
                 ext_net_id='', ext_bridge='')
-            l3_rpc.sync_routers(self.adminContext,
-                                host='host1')
+            l3_rpc_cb.sync_routers(self.adminContext,
+                                   host='host1')
             self._assert_router_on_agent(r['router']['id'], 'host1')
 
             self._add_external_gateway_to_router(
@@ -2025,6 +2082,41 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
                         expected_code=exc.HTTPBadRequest.code)
 
 
+class L3RpcCallbackTestCase(base.BaseTestCase):
+
+    def setUp(self):
+        super(L3RpcCallbackTestCase, self).setUp()
+        self.mock_plugin = mock.patch.object(
+            l3_rpc.L3RpcCallback,
+            'plugin', new_callable=mock.PropertyMock).start()
+        self.mock_l3plugin = mock.patch.object(
+            l3_rpc.L3RpcCallback,
+            'l3plugin', new_callable=mock.PropertyMock).start()
+        self.l3_rpc_cb = l3_rpc.L3RpcCallback()
+
+    def test__ensure_host_set_on_port_update_on_concurrent_delete(self):
+        port_id = 'foo_port_id'
+        port = {
+            'id': port_id,
+            'device_owner': 'compute:None',
+            portbindings.HOST_ID: '',
+            portbindings.VIF_TYPE: portbindings.VIF_TYPE_BINDING_FAILED
+        }
+        router_id = 'foo_router_id'
+        self.l3_rpc_cb.plugin.update_port.side_effect = n_exc.PortNotFound(
+            port_id=port_id)
+        with mock.patch.object(l3_rpc.LOG, 'debug') as mock_log:
+            self.l3_rpc_cb._ensure_host_set_on_port(
+                mock.ANY, mock.ANY, port, router_id)
+        self.l3_rpc_cb.plugin.update_port.assert_called_once_with(
+            mock.ANY, port_id, {'port': {'binding:host_id': mock.ANY}})
+        self.assertTrue(mock_log.call_count)
+        expected_message = ('Port foo_port_id not found while updating '
+                            'agent binding for router foo_router_id.')
+        actual_message = mock_log.call_args[0][0]
+        self.assertEqual(expected_message, actual_message)
+
+
 class L3AgentDbIntTestCase(L3BaseForIntTests, L3AgentDbTestCaseBase):
 
     """Unit tests for methods called by the L3 agent for
@@ -2032,10 +2124,9 @@ class L3AgentDbIntTestCase(L3BaseForIntTests, L3AgentDbTestCaseBase):
     """
 
     def setUp(self):
-        self.core_plugin = TestL3NatIntPlugin()
-        # core plugin is also plugin providing L3 routing
-        self.plugin = self.core_plugin
         super(L3AgentDbIntTestCase, self).setUp()
+        self.core_plugin = TestL3NatIntPlugin()
+        self.plugin = self.core_plugin
 
 
 class L3AgentDbSepTestCase(L3BaseForSepTests, L3AgentDbTestCaseBase):
@@ -2045,10 +2136,9 @@ class L3AgentDbSepTestCase(L3BaseForSepTests, L3AgentDbTestCaseBase):
     """
 
     def setUp(self):
-        self.core_plugin = TestNoL3NatPlugin()
-        # core plugin is also plugin providing L3 routing
-        self.plugin = TestL3NatServicePlugin()
         super(L3AgentDbSepTestCase, self).setUp()
+        self.core_plugin = TestNoL3NatPlugin()
+        self.plugin = TestL3NatServicePlugin()
 
 
 class L3NatDBIntTestCase(L3BaseForIntTests, L3NatTestCaseBase):
@@ -2061,11 +2151,3 @@ class L3NatDBSepTestCase(L3BaseForSepTests, L3NatTestCaseBase):
 
     """Unit tests for a separate L3 routing service plugin."""
     pass
-
-
-class L3NatDBIntTestCaseXML(L3NatDBIntTestCase):
-    fmt = 'xml'
-
-
-class L3NatDBSepTestCaseXML(L3NatDBSepTestCase):
-    fmt = 'xml'

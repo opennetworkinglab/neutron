@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright (c) 2012 OpenStack Foundation.
 # All Rights Reserved.
 #
@@ -24,6 +22,10 @@ from neutron.tests import base
 
 class TestNetnsCleanup(base.BaseTestCase):
 
+    def setup_config(self):
+        # don't use default config
+        pass
+
     def test_setup_conf(self):
         expected_opts = interface.OPTS
         conf = util.setup_conf()
@@ -34,7 +36,7 @@ class TestNetnsCleanup(base.BaseTestCase):
         conf.AGENT.root_helper = 'sudo',
         conf.dhcp_driver = 'driver'
 
-        method_to_patch = 'neutron.openstack.common.importutils.import_object'
+        method_to_patch = 'oslo.utils.importutils.import_object'
 
         with mock.patch(method_to_patch) as import_object:
             driver = mock.Mock()

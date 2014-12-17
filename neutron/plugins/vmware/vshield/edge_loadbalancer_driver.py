@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 VMware, Inc
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,17 +11,20 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Leon Cui, VMware
 
-from neutron.openstack.common import excutils
+from oslo.utils import excutils
+
+from neutron.i18n import _LE
 from neutron.openstack.common import log as logging
 from neutron.plugins.vmware.dbexts import vcns_db
 from neutron.plugins.vmware.vshield.common import (
     constants as vcns_const)
 from neutron.plugins.vmware.vshield.common import (
     exceptions as vcns_exc)
-from neutron.services.loadbalancer import constants as lb_constants
+try:
+    from neutron_lbaas.services.loadbalancer import constants as lb_constants
+except Exception:
+    print("WARNING: missing neutron-lbaas package")
 
 LOG = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ class EdgeLbDriver():
                 edge_id, app_profile)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to create app profile on edge: %s"),
+                LOG.exception(_LE("Failed to create app profile on edge: %s"),
                               edge_id)
         objuri = header['location']
         app_profileid = objuri[objuri.rfind("/") + 1:]
@@ -190,7 +191,7 @@ class EdgeLbDriver():
                 edge_id, vip_new)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to create vip on vshield edge: %s"),
+                LOG.exception(_LE("Failed to create vip on vshield edge: %s"),
                               edge_id)
                 self.vcns.delete_app_profile(edge_id, app_profileid)
         objuri = header['location']
@@ -225,7 +226,7 @@ class EdgeLbDriver():
             response = self.vcns.get_vip(edge_id, vip_vseid)[1]
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to get vip on edge"))
+                LOG.exception(_LE("Failed to get vip on edge"))
         return self._restore_lb_vip(context, edge_id, response)
 
     def update_vip(self, context, vip, session_persistence_update=True):
@@ -242,15 +243,15 @@ class EdgeLbDriver():
                     edge_id, app_profileid, app_profile)
             except vcns_exc.VcnsApiException:
                 with excutils.save_and_reraise_exception():
-                    LOG.exception(_("Failed to update app profile on "
-                                    "edge: %s") % edge_id)
+                    LOG.exception(_LE("Failed to update app profile on "
+                                      "edge: %s"), edge_id)
 
         vip_new = self._convert_lb_vip(context, edge_id, vip, app_profileid)
         try:
             self.vcns.update_vip(edge_id, vip_vseid, vip_new)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update vip on edge: %s") % edge_id)
+                LOG.exception(_LE("Failed to update vip on edge: %s"), edge_id)
 
     def delete_vip(self, context, id):
         vip_binding = self._get_vip_binding(context.session, id)
@@ -261,18 +262,18 @@ class EdgeLbDriver():
         try:
             self.vcns.delete_vip(edge_id, vip_vseid)
         except vcns_exc.ResourceNotFound:
-            LOG.exception(_("vip not found on edge: %s") % edge_id)
+            LOG.exception(_LE("vip not found on edge: %s"), edge_id)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to delete vip on edge: %s") % edge_id)
+                LOG.exception(_LE("Failed to delete vip on edge: %s"), edge_id)
 
         try:
             self.vcns.delete_app_profile(edge_id, app_profileid)
         except vcns_exc.ResourceNotFound:
-            LOG.exception(_("app profile not found on edge: %s") % edge_id)
+            LOG.exception(_LE("app profile not found on edge: %s"), edge_id)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to delete app profile on edge: %s") %
+                LOG.exception(_LE("Failed to delete app profile on edge: %s"),
                               edge_id)
 
         vcns_db.delete_vcns_edge_vip_binding(context.session, id)
@@ -283,7 +284,7 @@ class EdgeLbDriver():
             header = self.vcns.create_pool(edge_id, pool_new)[0]
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to create pool"))
+                LOG.exception(_LE("Failed to create pool"))
 
         objuri = header['location']
         pool_vseid = objuri[objuri.rfind("/") + 1:]
@@ -310,7 +311,7 @@ class EdgeLbDriver():
             response = self.vcns.get_pool(edge_id, pool_vseid)[1]
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to get pool on edge"))
+                LOG.exception(_LE("Failed to get pool on edge"))
         return self._restore_lb_pool(context, edge_id, response)
 
     def update_pool(self, context, edge_id, pool, members):
@@ -322,7 +323,7 @@ class EdgeLbDriver():
             self.vcns.update_pool(edge_id, pool_vseid, pool_new)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update pool"))
+                LOG.exception(_LE("Failed to update pool"))
 
     def delete_pool(self, context, id, edge_id):
         pool_binding = vcns_db.get_vcns_edge_pool_binding(
@@ -332,7 +333,7 @@ class EdgeLbDriver():
             self.vcns.delete_pool(edge_id, pool_vseid)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to delete pool"))
+                LOG.exception(_LE("Failed to delete pool"))
         vcns_db.delete_vcns_edge_pool_binding(
             context.session, id, edge_id)
 
@@ -342,7 +343,7 @@ class EdgeLbDriver():
             header = self.vcns.create_health_monitor(edge_id, monitor_new)[0]
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to create monitor on edge: %s"),
+                LOG.exception(_LE("Failed to create monitor on edge: %s"),
                               edge_id)
 
         objuri = header['location']
@@ -370,7 +371,7 @@ class EdgeLbDriver():
             response = self.vcns.get_health_monitor(edge_id, monitor_vseid)[1]
         except vcns_exc.VcnsApiException as e:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to get monitor on edge: %s"),
+                LOG.exception(_LE("Failed to get monitor on edge: %s"),
                               e.response)
         return self._restore_lb_monitor(context, edge_id, response)
 
@@ -387,7 +388,7 @@ class EdgeLbDriver():
                 edge_id, monitor_vseid, monitor_new)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update monitor on edge: %s"),
+                LOG.exception(_LE("Failed to update monitor on edge: %s"),
                               edge_id)
 
     def delete_health_monitor(self, context, id, edge_id):
@@ -398,6 +399,6 @@ class EdgeLbDriver():
             self.vcns.delete_health_monitor(edge_id, monitor_vseid)
         except vcns_exc.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to delete monitor"))
+                LOG.exception(_LE("Failed to delete monitor"))
         vcns_db.delete_vcns_edge_monitor_binding(
             context.session, id, edge_id)

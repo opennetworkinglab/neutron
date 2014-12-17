@@ -13,45 +13,47 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Mohammad Banikazemi, IBM Corp.
 
 
 import socket
+import sys
 import time
 
 import eventlet
+eventlet.monkey_patch()
+
 from oslo.config import cfg
+from oslo import messaging
 
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import ovs_lib
 from neutron.agent import rpc as agent_rpc
-from neutron.common import config as logging_config
+from neutron.common import config as common_config
 from neutron.common import constants as n_const
 from neutron.common import topics
 from neutron.common import utils as n_utils
+from neutron.i18n import _LE, _LI
 from neutron import context
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import dispatcher
-from neutron.plugins.ibm.common import config  # noqa
 from neutron.plugins.ibm.common import constants
 
 
 LOG = logging.getLogger(__name__)
+cfg.CONF.import_group('SDNVE', 'neutron.plugins.ibm.common.config')
+cfg.CONF.import_group('SDNVE_AGENT', 'neutron.plugins.ibm.common.config')
 
 
 class SdnvePluginApi(agent_rpc.PluginApi):
 
     def sdnve_info(self, context, info):
-        return self.call(context,
-                         self.make_msg('sdnve_info', info=info),
-                         topic=self.topic)
+        cctxt = self.client.prepare()
+        return cctxt.call(context, 'sdnve_info', info=info)
 
 
-class SdnveNeutronAgent():
+class SdnveNeutronAgent(object):
 
-    RPC_API_VERSION = '1.1'
+    target = messaging.Target(version='1.1')
 
     def __init__(self, integ_br, interface_mappings,
                  info, root_helper, polling_interval,
@@ -68,6 +70,7 @@ class SdnveNeutronAgent():
         :param controller_ip: Ip address of SDN-VE controller.
         '''
 
+        super(SdnveNeutronAgent, self).__init__()
         self.root_helper = root_helper
         self.int_bridge_name = integ_br
         self.controller_ip = controller_ip
@@ -104,7 +107,7 @@ class SdnveNeutronAgent():
                                         self.agent_state)
             self.agent_state.pop('start_flag', None)
         except Exception:
-            LOG.exception(_("Failed reporting state!"))
+            LOG.exception(_LE("Failed reporting state!"))
 
     def setup_rpc(self):
         if self.int_br:
@@ -119,10 +122,10 @@ class SdnveNeutronAgent():
         self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
 
         self.context = context.get_admin_context_without_session()
-        self.dispatcher = self.create_rpc_dispatcher()
+        self.endpoints = [self]
         consumers = [[constants.INFO, topics.UPDATE]]
 
-        self.connection = agent_rpc.create_consumers(self.dispatcher,
+        self.connection = agent_rpc.create_consumers(self.endpoints,
                                                      self.topic,
                                                      consumers)
         if self.polling_interval:
@@ -132,26 +135,21 @@ class SdnveNeutronAgent():
 
     # Plugin calls the agents through the following
     def info_update(self, context, **kwargs):
-        LOG.debug(_("info_update received"))
+        LOG.debug("info_update received")
         info = kwargs.get('info', {})
         new_controller = info.get('new_controller')
         out_of_band = info.get('out_of_band')
         if self.int_br and new_controller:
-            LOG.debug(_("info_update received. New controller"
-                        "is to be set to: %s"), new_controller)
-            self.int_br.run_vsctl(["set-controller",
-                                   self.int_bridge_name,
-                                   "tcp:" + new_controller])
+            LOG.debug("info_update received. New controller"
+                      "is to be set to: %s", new_controller)
+            self.int_br.set_controller(["tcp:" + new_controller])
             if out_of_band:
-                LOG.debug(_("info_update received. New controller"
-                            "is set to be out of band"))
+                LOG.debug("info_update received. New controller"
+                          "is set to be out of band")
                 self.int_br.set_db_attribute("controller",
                                              self.int_bridge_name,
                                              "connection-mode",
                                              "out-of-band")
-
-    def create_rpc_dispatcher(self):
-        return dispatcher.RpcDispatcher([self])
 
     def setup_integration_br(self, bridge_name, reset_br, out_of_band,
                              controller_ip=None):
@@ -175,8 +173,7 @@ class SdnveNeutronAgent():
 
         # set the controller
         if controller_ip:
-            int_br.run_vsctl(
-                ["set-controller", bridge_name, "tcp:" + controller_ip])
+            int_br.set_controller(["tcp:" + controller_ip])
         if out_of_band:
             int_br.set_db_attribute("controller", bridge_name,
                                     "connection-mode", "out-of-band")
@@ -191,15 +188,15 @@ class SdnveNeutronAgent():
         '''
 
         for physical_network, interface in interface_mappings.iteritems():
-            LOG.info(_("Mapping physical network %(physical_network)s to "
-                       "interface %(interface)s"),
+            LOG.info(_LI("Mapping physical network %(physical_network)s to "
+                         "interface %(interface)s"),
                      {'physical_network': physical_network,
                       'interface': interface})
             # Connect the physical interface to the bridge
             if not ip_lib.device_exists(interface, self.root_helper):
-                LOG.error(_("Interface %(interface)s for physical network "
-                            "%(physical_network)s does not exist. Agent "
-                            "terminated!"),
+                LOG.error(_LE("Interface %(interface)s for physical network "
+                              "%(physical_network)s does not exist. Agent "
+                              "terminated!"),
                           {'physical_network': physical_network,
                            'interface': interface})
                 raise SystemExit(1)
@@ -215,15 +212,15 @@ class SdnveNeutronAgent():
 
         while True:
             start = time.time()
-            LOG.debug(_("Agent in the rpc loop."))
+            LOG.debug("Agent in the rpc loop.")
 
             # sleep till end of polling interval
             elapsed = (time.time() - start)
             if (elapsed < self.polling_interval):
                 time.sleep(self.polling_interval - elapsed)
             else:
-                LOG.info(_("Loop iteration exceeded interval "
-                           "(%(polling_interval)s vs. %(elapsed)s)!"),
+                LOG.info(_LI("Loop iteration exceeded interval "
+                             "(%(polling_interval)s vs. %(elapsed)s)!"),
                          {'polling_interval': self.polling_interval,
                           'elapsed': elapsed})
 
@@ -232,12 +229,11 @@ class SdnveNeutronAgent():
 
 
 def create_agent_config_map(config):
-
     interface_mappings = n_utils.parse_mappings(
         config.SDNVE.interface_mappings)
 
     controller_ips = config.SDNVE.controller_ips
-    LOG.info(_("Controller IPs: %s"), controller_ips)
+    LOG.info(_LI("Controller IPs: %s"), controller_ips)
     controller_ip = controller_ips[0]
 
     return {
@@ -252,19 +248,18 @@ def create_agent_config_map(config):
 
 
 def main():
-    eventlet.monkey_patch()
     cfg.CONF.register_opts(ip_lib.OPTS)
-    cfg.CONF(project='neutron')
-    logging_config.setup_logging(cfg.CONF)
+    common_config.init(sys.argv[1:])
+    common_config.setup_logging()
 
     try:
         agent_config = create_agent_config_map(cfg.CONF)
     except ValueError as e:
-        LOG.exception(_("%s Agent terminated!"), e)
+        LOG.exception(_LE("%s Agent terminated!"), e)
         raise SystemExit(1)
 
     plugin = SdnveNeutronAgent(**agent_config)
 
     # Start everything.
-    LOG.info(_("Agent initialized successfully, now running... "))
+    LOG.info(_LI("Agent initialized successfully, now running... "))
     plugin.daemon_loop()

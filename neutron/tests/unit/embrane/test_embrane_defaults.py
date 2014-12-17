@@ -1,5 +1,3 @@
-# vim:  tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 Embrane, Inc.
 # All Rights Reserved.
 #
@@ -14,19 +12,11 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author:  Ivar Lazzaro, Embrane, Inc.
 
-import sys
-
-import mock
 from oslo.config import cfg
 
 from neutron.plugins.embrane.common import config  # noqa
 from neutron.tests import base
-
-# Need to mock heleosapi.
-sys.modules["heleosapi"] = mock.Mock()
 
 
 class ConfigurationTest(base.BaseTestCase):

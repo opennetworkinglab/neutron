@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 # All Rights Reserved.
 #
@@ -20,6 +18,7 @@ from neutronclient.common import utils
 from neutronclient.neutron import v2_0 as client
 from neutronclient.neutron.v2_0 import port
 
+from neutron.i18n import _LI
 from neutron.openstack.common import log as logging
 
 
@@ -90,7 +89,7 @@ class ListProbe(client.NeutronCommand, lister.Lister):
 
         debug_agent = self.get_debug_agent()
         info = debug_agent.list_probes()
-        columns = len(info) > 0 and sorted(info[0].keys()) or []
+        columns = sorted(info[0].keys()) if info else []
         return (columns, (utils.get_item_properties(
             s, columns, formatters=self._formatters, )
             for s in info), )
@@ -104,8 +103,8 @@ class ClearProbe(ProbeCommand):
     def run(self, parsed_args):
         self.log.debug('run(%s)' % parsed_args)
         debug_agent = self.get_debug_agent()
-        debug_agent.clear_probe()
-        self.log.info(_('All Probes deleted '))
+        cleared_probes_count = debug_agent.clear_probes()
+        self.log.info(_LI('%d probe(s) deleted') % cleared_probes_count)
 
 
 class ExecProbe(ProbeCommand):

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -21,6 +19,7 @@ from neutron.agent.common import config
 from neutron.agent.linux import dhcp
 from neutron.agent.linux import interface
 from neutron.agent.linux import ip_lib
+from neutron.agent.linux import ovs_lib
 from neutron.agent.linux import utils
 from neutron.extensions import flavor
 from neutron.openstack.common import uuidutils
@@ -214,17 +213,7 @@ class TestOVSInterfaceDriver(TestBase):
         def device_exists(dev, root_helper=None, namespace=None):
             return dev == bridge
 
-        vsctl_cmd = ['ovs-vsctl', '--', '--if-exists', 'del-port',
-                     'tap0', '--', 'add-port',
-                     bridge, 'tap0', '--', 'set', 'Interface', 'tap0',
-                     'type=internal', '--', 'set', 'Interface', 'tap0',
-                     'external-ids:iface-id=port-1234', '--', 'set',
-                     'Interface', 'tap0',
-                     'external-ids:iface-status=active', '--', 'set',
-                     'Interface', 'tap0',
-                     'external-ids:attached-mac=aa:bb:cc:dd:ee:ff']
-
-        with mock.patch.object(utils, 'execute') as execute:
+        with mock.patch.object(ovs_lib.OVSBridge, 'replace_port') as replace:
             ovs = interface.OVSInterfaceDriver(self.conf)
             self.device_exists.side_effect = device_exists
             ovs.plug('01234567-1234-1234-99',
@@ -233,7 +222,12 @@ class TestOVSInterfaceDriver(TestBase):
                      'aa:bb:cc:dd:ee:ff',
                      bridge=bridge,
                      namespace=namespace)
-            execute.assert_called_once_with(vsctl_cmd, 'sudo')
+            replace.assert_called_once_with(
+                'tap0',
+                ('type', 'internal'),
+                ('external-ids:iface-id', 'port-1234'),
+                ('external-ids:iface-status', 'active'),
+                ('external-ids:attached-mac', 'aa:bb:cc:dd:ee:ff'))
 
         expected = [mock.call('sudo'),
                     mock.call().device('tap0'),
@@ -302,15 +296,7 @@ class TestOVSInterfaceDriverWithVeth(TestOVSInterfaceDriver):
                     mock.call().add_veth('tap0', devname,
                                          namespace2=namespace)]
 
-        vsctl_cmd = ['ovs-vsctl', '--', '--if-exists', 'del-port',
-                     'tap0', '--', 'add-port',
-                     bridge, 'tap0', '--', 'set', 'Interface', 'tap0',
-                     'external-ids:iface-id=port-1234', '--', 'set',
-                     'Interface', 'tap0',
-                     'external-ids:iface-status=active', '--', 'set',
-                     'Interface', 'tap0',
-                     'external-ids:attached-mac=aa:bb:cc:dd:ee:ff']
-        with mock.patch.object(utils, 'execute') as execute:
+        with mock.patch.object(ovs_lib.OVSBridge, 'replace_port') as replace:
             ovs.plug('01234567-1234-1234-99',
                      'port-1234',
                      devname,
@@ -318,7 +304,11 @@ class TestOVSInterfaceDriverWithVeth(TestOVSInterfaceDriver):
                      bridge=bridge,
                      namespace=namespace,
                      prefix=prefix)
-            execute.assert_called_once_with(vsctl_cmd, 'sudo')
+            replace.assert_called_once_with(
+                'tap0',
+                ('external-ids:iface-id', 'port-1234'),
+                ('external-ids:iface-status', 'active'),
+                ('external-ids:attached-mac', 'aa:bb:cc:dd:ee:ff'))
 
         ns_dev.assert_has_calls(
             [mock.call.link.set_address('aa:bb:cc:dd:ee:ff')])
@@ -396,7 +386,7 @@ class TestBridgeInterfaceDriver(TestBase):
                     'port-1234',
                     'tap0',
                     'aa:bb:cc:dd:ee:ff')
-            self.ip_dev.assert_has_calls([])
+            self.assertFalse(self.ip_dev.called)
             self.assertEqual(log.call_count, 1)
 
     def test_plug_mtu(self):
@@ -451,6 +441,7 @@ class TestMetaInterfaceDriver(TestBase):
             'meta_flavor_driver_mappings',
             'fake1:neutron.agent.linux.interface.OVSInterfaceDriver,'
             'fake2:neutron.agent.linux.interface.BridgeInterfaceDriver')
+        self.conf.set_override('endpoint_type', 'internalURL')
 
     def test_get_driver_by_network_id(self):
         meta_interface = interface.MetaInterfaceDriver(self.conf)

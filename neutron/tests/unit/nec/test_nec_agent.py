@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2013 NEC Corporation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -41,8 +39,6 @@ class TestNecAgentBase(base.BaseTestCase):
         cfg.CONF.set_default('firewall_driver',
                              'neutron.agent.firewall.NoopFirewallDriver',
                              group='SECURITYGROUP')
-        cfg.CONF.set_override('rpc_backend',
-                              'neutron.openstack.common.rpc.impl_fake')
         cfg.CONF.set_override('host', 'dummy-host')
         with contextlib.nested(
             mock.patch.object(ovs_lib.OVSBridge, 'get_datapath_id',
@@ -310,58 +306,42 @@ class TestNecAgentCallback(TestNecAgentBase):
 
 class TestNecAgentPluginApi(TestNecAgentBase):
 
-    def _test_plugin_api(self, expected_failure=False):
+    def test_plugin_api(self):
         with contextlib.nested(
-            mock.patch.object(nec_neutron_agent.NECPluginApi, 'make_msg'),
-            mock.patch.object(nec_neutron_agent.NECPluginApi, 'call'),
-            mock.patch.object(nec_neutron_agent, 'LOG')
-        ) as (make_msg, apicall, log):
+            mock.patch.object(self.agent.plugin_rpc.client, 'prepare'),
+            mock.patch.object(self.agent.plugin_rpc.client, 'call'),
+        ) as (mock_prepare, mock_call):
+            mock_prepare.return_value = self.agent.plugin_rpc.client
+
             agent_id = 'nec-q-agent.dummy-host'
-            if expected_failure:
-                apicall.side_effect = Exception()
+            port_added = [{'id': 'id-1', 'mac': 'mac-1', 'port_no': '1'},
+                          {'id': 'id-2', 'mac': 'mac-2', 'port_no': '2'}]
+            port_removed = ['id-3', 'id-4', 'id-5']
 
             self.agent.plugin_rpc.update_ports(
                 mock.sentinel.ctx, agent_id, OVS_DPID_0X,
-                # port_added
-                [{'id': 'id-1', 'mac': 'mac-1', 'port_no': '1'},
-                 {'id': 'id-2', 'mac': 'mac-2', 'port_no': '2'}],
-                # port_removed
-                ['id-3', 'id-4', 'id-5'])
+                port_added, port_removed)
 
-            make_msg.assert_called_once_with(
-                'update_ports', topic='q-agent-notifier',
-                agent_id=agent_id, datapath_id=OVS_DPID_0X,
-                port_added=[{'id': 'id-1', 'mac': 'mac-1', 'port_no': '1'},
-                            {'id': 'id-2', 'mac': 'mac-2', 'port_no': '2'}],
-                port_removed=['id-3', 'id-4', 'id-5'])
-
-            apicall.assert_called_once_with(mock.sentinel.ctx,
-                                            make_msg.return_value)
-
-            self.assertTrue(log.info.called)
-            if expected_failure:
-                self.assertTrue(log.warn.called)
-
-    def test_plugin_api(self):
-        self._test_plugin_api()
+            mock_call.assert_called_once_with(
+                    mock.sentinel.ctx, 'update_ports',
+                    agent_id=agent_id, datapath_id=OVS_DPID_0X,
+                    port_added=port_added, port_removed=port_removed)
 
 
 class TestNecAgentMain(base.BaseTestCase):
     def test_main(self):
         with contextlib.nested(
             mock.patch.object(nec_neutron_agent, 'NECNeutronAgent'),
-            mock.patch('eventlet.monkey_patch'),
-            mock.patch.object(nec_neutron_agent, 'logging_config'),
+            mock.patch.object(nec_neutron_agent, 'common_config'),
             mock.patch.object(nec_neutron_agent, 'config')
-        ) as (agent, eventlet, logging_config, cfg):
+        ) as (agent, common_config, cfg):
             cfg.OVS.integration_bridge = 'br-int-x'
             cfg.AGENT.root_helper = 'dummy-helper'
             cfg.AGENT.polling_interval = 10
 
             nec_neutron_agent.main()
 
-            self.assertTrue(eventlet.called)
-            self.assertTrue(logging_config.setup_logging.called)
+            self.assertTrue(common_config.setup_logging.called)
             agent.assert_has_calls([
                 mock.call('br-int-x', 'dummy-helper', 10),
                 mock.call().daemon_loop()

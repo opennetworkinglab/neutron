@@ -12,11 +12,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import eventlet
 import mock
 import testtools
 
+from neutron.common import constants
 from neutron.common import exceptions as n_exc
 from neutron.common import utils
+from neutron.plugins.common import constants as p_const
 from neutron.plugins.common import utils as plugin_utils
 from neutron.tests import base
 
@@ -64,6 +67,68 @@ class TestParseMappings(base.BaseTestCase):
         self.assertEqual(self.parse(['']), {})
 
 
+class TestParseTunnelRangesMixin(object):
+    TUN_MIN = None
+    TUN_MAX = None
+    TYPE = None
+    _err_prefix = "Invalid network Tunnel range: '%d:%d' - "
+    _err_suffix = "%s is not a valid %s identifier"
+    _err_range = "End of tunnel range is less than start of tunnel range"
+
+    def _build_invalid_tunnel_range_msg(self, t_range_tuple, n):
+        bad_id = t_range_tuple[n - 1]
+        return (self._err_prefix % t_range_tuple) + (self._err_suffix
+                                                 % (bad_id, self.TYPE))
+
+    def _build_range_reversed_msg(self, t_range_tuple):
+        return (self._err_prefix % t_range_tuple) + self._err_range
+
+    def _verify_range(self, tunnel_range):
+        return plugin_utils.verify_tunnel_range(tunnel_range, self.TYPE)
+
+    def _check_range_valid_ranges(self, tunnel_range):
+        self.assertIsNone(self._verify_range(tunnel_range))
+
+    def _check_range_invalid_ranges(self, bad_range, which):
+        expected_msg = self._build_invalid_tunnel_range_msg(bad_range, which)
+        err = self.assertRaises(n_exc.NetworkTunnelRangeError,
+                                self._verify_range, bad_range)
+        self.assertEqual(expected_msg, str(err))
+
+    def _check_range_reversed(self, bad_range):
+        err = self.assertRaises(n_exc.NetworkTunnelRangeError,
+                                self._verify_range, bad_range)
+        expected_msg = self._build_range_reversed_msg(bad_range)
+        self.assertEqual(expected_msg, str(err))
+
+    def test_range_tunnel_id_valid(self):
+            self._check_range_valid_ranges((self.TUN_MIN, self.TUN_MAX))
+
+    def test_range_tunnel_id_invalid(self):
+            self._check_range_invalid_ranges((-1, self.TUN_MAX), 1)
+            self._check_range_invalid_ranges((self.TUN_MIN,
+                                              self.TUN_MAX + 1), 2)
+            self._check_range_invalid_ranges((self.TUN_MIN - 1,
+                                              self.TUN_MAX + 1), 1)
+
+    def test_range_tunnel_id_reversed(self):
+            self._check_range_reversed((self.TUN_MAX, self.TUN_MIN))
+
+
+class TestGreTunnelRangeVerifyValid(TestParseTunnelRangesMixin,
+                                    base.BaseTestCase):
+    TUN_MIN = constants.MIN_GRE_ID
+    TUN_MAX = constants.MAX_GRE_ID
+    TYPE = p_const.TYPE_GRE
+
+
+class TestVxlanTunnelRangeVerifyValid(TestParseTunnelRangesMixin,
+                                      base.BaseTestCase):
+    TUN_MIN = constants.MIN_VXLAN_VNI
+    TUN_MAX = constants.MAX_VXLAN_VNI
+    TYPE = p_const.TYPE_VXLAN
+
+
 class UtilTestParseVlanRanges(base.BaseTestCase):
     _err_prefix = "Invalid network VLAN range: '"
     _err_too_few = "' - 'need more than 2 values to unpack'"
@@ -94,6 +159,22 @@ class UtilTestParseVlanRanges(base.BaseTestCase):
     def _vrange_invalid(self, v_range_tuple):
         v_range_str = '%d:%d' % v_range_tuple
         return self._err_prefix + v_range_str + self._err_range
+
+
+class TestVlanNetworkNameValid(base.BaseTestCase):
+    def parse_vlan_ranges(self, vlan_range):
+        return plugin_utils.parse_network_vlan_ranges(vlan_range)
+
+    def test_validate_provider_phynet_name_mixed(self):
+        self.assertRaises(n_exc.PhysicalNetworkNameError,
+                          self.parse_vlan_ranges,
+                          ['', ':23:30', 'physnet1',
+                           'tenant_net:100:200'])
+
+    def test_validate_provider_phynet_name_bad(self):
+        self.assertRaises(n_exc.PhysicalNetworkNameError,
+                          self.parse_vlan_ranges,
+                          [':1:34'])
 
 
 class TestVlanRangeVerifyValid(UtilTestParseVlanRanges):
@@ -381,3 +462,100 @@ class TestDict2Tuples(base.BaseTestCase):
         expected = ((42, 'baz'), ('aaa', 'zzz'), ('foo', 'bar'))
         output_tuple = utils.dict2tuple(input_dict)
         self.assertEqual(expected, output_tuple)
+
+
+class TestExceptionLogger(base.BaseTestCase):
+    def test_normal_call(self):
+        result = "Result"
+
+        @utils.exception_logger()
+        def func():
+            return result
+
+        self.assertEqual(result, func())
+
+    def test_raise(self):
+        result = "Result"
+
+        @utils.exception_logger()
+        def func():
+            raise RuntimeError(result)
+
+        self.assertRaises(RuntimeError, func)
+
+    def test_spawn_normal(self):
+        result = "Result"
+        logger = mock.Mock()
+
+        @utils.exception_logger(logger=logger)
+        def func():
+            return result
+
+        gt = eventlet.spawn(func)
+        self.assertEqual(result, gt.wait())
+        self.assertFalse(logger.called)
+
+    def test_spawn_raise(self):
+        result = "Result"
+        logger = mock.Mock()
+
+        @utils.exception_logger(logger=logger)
+        def func():
+            raise RuntimeError(result)
+
+        gt = eventlet.spawn(func)
+        self.assertRaises(RuntimeError, gt.wait)
+        self.assertTrue(logger.called)
+
+    def test_pool_spawn_normal(self):
+        logger = mock.Mock()
+        calls = mock.Mock()
+
+        @utils.exception_logger(logger=logger)
+        def func(i):
+            calls(i)
+
+        pool = eventlet.GreenPool(4)
+        for i in range(0, 4):
+            pool.spawn(func, i)
+        pool.waitall()
+
+        calls.assert_has_calls([mock.call(0), mock.call(1),
+                                mock.call(2), mock.call(3)],
+                               any_order=True)
+        self.assertFalse(logger.called)
+
+    def test_pool_spawn_raise(self):
+        logger = mock.Mock()
+        calls = mock.Mock()
+
+        @utils.exception_logger(logger=logger)
+        def func(i):
+            if i == 2:
+                raise RuntimeError(2)
+            else:
+                calls(i)
+
+        pool = eventlet.GreenPool(4)
+        for i in range(0, 4):
+            pool.spawn(func, i)
+        pool.waitall()
+
+        calls.assert_has_calls([mock.call(0), mock.call(1), mock.call(3)],
+                               any_order=True)
+        self.assertTrue(logger.called)
+
+
+class TestDvrServices(base.BaseTestCase):
+
+    def _test_is_dvr_serviced(self, device_owner, expected):
+        self.assertEqual(expected, utils.is_dvr_serviced(device_owner))
+
+    def test_is_dvr_serviced_with_lb_port(self):
+        self._test_is_dvr_serviced(constants.DEVICE_OWNER_LOADBALANCER, True)
+
+    def test_is_dvr_serviced_with_dhcp_port(self):
+        self._test_is_dvr_serviced(constants.DEVICE_OWNER_DHCP, True)
+
+    def test_is_dvr_serviced_with_vm_port(self):
+        self._test_is_dvr_serviced('compute:', True)

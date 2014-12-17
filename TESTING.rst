@@ -4,16 +4,16 @@ Testing Neutron
 Overview
 --------
 
-The unit tests are meant to cover as much code as possible and should
-be executed without the service running. They are designed to test
-the various pieces of the neutron tree to make sure any new changes
-don't break existing functionality.
+The unit tests (neutron/test/unit/) are meant to cover as much code as
+possible and should be executed without the service running. They are
+designed to test the various pieces of the neutron tree to make sure
+any new changes don't break existing functionality.
 
-The functional tests are intended to validate actual system
-interaction.  Mocks should be used sparingly, if at all.  Care
-should be taken to ensure that existing system resources are not
-modified and that resources created in tests are properly cleaned
-up.
+The functional tests (neutron/tests/functional/) are intended to
+validate actual system interaction.  Mocks should be used sparingly,
+if at all.  Care should be taken to ensure that existing system
+resources are not modified and that resources created in tests are
+properly cleaned up.
 
 Development process
 -------------------
@@ -27,7 +27,7 @@ current tests should be passing.
 Virtual environments
 ~~~~~~~~~~~~~~~~~~~~
 
-Testing OpenStack projects, including Neutron, is made easier with `DevStack <https://github.com/openstack-dev/devstack>`_.
+Testing OpenStack projects, including Neutron, is made easier with `DevStack <https://git.openstack.org/cgit/openstack-dev/devstack>`_.
 
 Create a machine (such as a VM or Vagrant box) running a distribution supported
 by DevStack and install DevStack there. For example, there is a Vagrant script
@@ -100,6 +100,16 @@ Neutron source code::
 
     tox
 
+To run functional tests that do not require sudo privileges or
+specific-system dependencies::
+
+    tox -e functional
+
+To run all the functional tests in an environment that has been configured
+by devstack to support sudo and system-specific dependencies::
+
+    tox -e dsvm-functional
+
 For more information on the standard Tox-based test infrastructure used by
 OpenStack and how to do some common test/debugging procedures with Testr,
 see this wiki page:
@@ -123,11 +133,11 @@ class separating it from the module path with a colon.
 For example, the following would run only the JSONV2TestCase tests from
 neutron/tests/unit/test_api_v2.py::
 
-      $ ./run_tests.sh neutron.tests.unit.test_api_v2:JSONV2TestCase
+      $ ./run_tests.sh neutron.tests.unit.test_api_v2.JSONV2TestCase
 
 or::
 
-      $ ./tox neutron.tests.unit.test_api_v2:JSONV2TestCase
+      $ tox -e py27 neutron.tests.unit.test_api_v2.JSONV2TestCase
 
 Adding more tests
 ~~~~~~~~~~~~~~~~~
@@ -174,7 +184,22 @@ overwritten during the next tox run.
 Post-mortem debugging
 ~~~~~~~~~~~~~~~~~~~~~
 
-Setting OS_POST_MORTEM_DEBUG=1 in the shell environment will ensure
-that pdb.post_mortem() will be invoked on test failure::
+Setting OS_POST_MORTEM_DEBUGGER in the shell environment will ensure
+that the debugger .post_mortem() method will be invoked on test failure::
 
-    $ OS_POST_MORTEM_DEBUG=1 ./run_tests.sh -d [test module path]
+    $ OS_POST_MORTEM_DEBUGGER=pdb ./run_tests.sh -d [test module path]
+
+Supported debuggers are pdb, and pudb. Pudb is full-screen, console-based
+visual debugger for Python which let you inspect variables, the stack,
+and breakpoints in a very visual way, keeping a high degree of compatibility
+with pdb::
+
+    $ ./.venv/bin/pip install pudb
+
+    $ OS_POST_MORTEM_DEBUGGER=pudb ./run_tests.sh -d [test module path]
+
+References
+==========
+
+.. [#pudb] PUDB debugger:
+   https://pypi.python.org/pypi/pudb

@@ -13,23 +13,24 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import eventlet
 import inspect
 import logging as std_logging
 import os
 import random
 
 from oslo.config import cfg
+from oslo.messaging import server as rpc_server
+from oslo.utils import excutils
+from oslo.utils import importutils
 
 from neutron.common import config
+from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.db import api as session
+from neutron.i18n import _LE, _LI
 from neutron import manager
-from neutron.openstack.common import excutils
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.openstack.common.rpc import service
 from neutron.openstack.common import service as common_service
 from neutron import wsgi
 
@@ -40,7 +41,7 @@ service_opts = [
                help=_('Seconds between running periodic tasks')),
     cfg.IntOpt('api_workers',
                default=0,
-               help=_('Number of separate worker processes for service')),
+               help=_('Number of separate API worker processes for service')),
     cfg.IntOpt('rpc_workers',
                default=0,
                help=_('Number of RPC worker processes for service')),
@@ -88,7 +89,7 @@ class NeutronApiService(WsgiService):
         # flags. Everything else must be set up in the conf file...
         # Log the options used when starting if we're in debug mode...
 
-        config.setup_logging(cfg.CONF)
+        config.setup_logging()
         # Dump the initial option values
         cfg.CONF.log_opt_values(LOG, std_logging.DEBUG)
         service = cls(app_name)
@@ -102,8 +103,8 @@ def serve_wsgi(cls):
         service.start()
     except Exception:
         with excutils.save_and_reraise_exception():
-            LOG.exception(_('Unrecoverable error: please check log '
-                            'for details.'))
+            LOG.exception(_LE('Unrecoverable error: please check log '
+                              'for details.'))
 
     return service
 
@@ -112,39 +113,41 @@ class RpcWorker(object):
     """Wraps a worker to be handled by ProcessLauncher"""
     def __init__(self, plugin):
         self._plugin = plugin
-        self._server = None
+        self._servers = []
 
     def start(self):
         # We may have just forked from parent process.  A quick disposal of the
         # existing sql connections avoids producing errors later when they are
         # discovered to be broken.
         session.get_engine().pool.dispose()
-        self._server = self._plugin.start_rpc_listener()
+        self._servers = self._plugin.start_rpc_listeners()
 
     def wait(self):
-        if isinstance(self._server, eventlet.greenthread.GreenThread):
-            self._server.wait()
+        for server in self._servers:
+            if isinstance(server, rpc_server.MessageHandlingServer):
+                server.wait()
 
     def stop(self):
-        if isinstance(self._server, eventlet.greenthread.GreenThread):
-            self._server.kill()
-            self._server = None
+        for server in self._servers:
+            if isinstance(server, rpc_server.MessageHandlingServer):
+                server.stop()
+            self._servers = []
 
 
 def serve_rpc():
     plugin = manager.NeutronManager.get_plugin()
 
-    # If 0 < rpc_workers then start_rpc_listener would be called in a
+    # If 0 < rpc_workers then start_rpc_listeners would be called in a
     # subprocess and we cannot simply catch the NotImplementedError.  It is
     # simpler to check this up front by testing whether the plugin supports
     # multiple RPC workers.
     if not plugin.rpc_workers_supported():
-        LOG.debug(_("Active plugin doesn't implement start_rpc_listener"))
+        LOG.debug("Active plugin doesn't implement start_rpc_listeners")
         if 0 < cfg.CONF.rpc_workers:
-            msg = _("'rpc_workers = %d' ignored because start_rpc_listener "
-                    "is not implemented.")
-            LOG.error(msg, cfg.CONF.rpc_workers)
-        raise NotImplementedError
+            LOG.error(_LE("'rpc_workers = %d' ignored because "
+                          "start_rpc_listeners is not implemented."),
+                      cfg.CONF.rpc_workers)
+        raise NotImplementedError()
 
     try:
         rpc = RpcWorker(plugin)
@@ -158,27 +161,26 @@ def serve_rpc():
             return launcher
     except Exception:
         with excutils.save_and_reraise_exception():
-            LOG.exception(_('Unrecoverable error: please check log '
-                            'for details.'))
+            LOG.exception(_LE('Unrecoverable error: please check log for '
+                              'details.'))
 
 
 def _run_wsgi(app_name):
     app = config.load_paste_app(app_name)
     if not app:
-        LOG.error(_('No known API applications configured.'))
+        LOG.error(_LE('No known API applications configured.'))
         return
     server = wsgi.Server("Neutron")
     server.start(app, cfg.CONF.bind_port, cfg.CONF.bind_host,
                  workers=cfg.CONF.api_workers)
     # Dump all option values here after all options are parsed
     cfg.CONF.log_opt_values(LOG, std_logging.DEBUG)
-    LOG.info(_("Neutron service started, listening on %(host)s:%(port)s"),
-             {'host': cfg.CONF.bind_host,
-              'port': cfg.CONF.bind_port})
+    LOG.info(_LI("Neutron service started, listening on %(host)s:%(port)s"),
+             {'host': cfg.CONF.bind_host, 'port': cfg.CONF.bind_port})
     return server
 
 
-class Service(service.Service):
+class Service(n_rpc.Service):
     """Service object for binaries running on hosts.
 
     A service takes a manager and enables rpc by listening to queues based
@@ -234,7 +236,7 @@ class Service(service.Service):
 
         :param host: defaults to CONF.host
         :param binary: defaults to basename of executable
-        :param topic: defaults to bin_name - 'nova-' part
+        :param topic: defaults to bin_name - 'neutron-' part
         :param manager: defaults to CONF.<topic>_manager
         :param report_interval: defaults to CONF.report_interval
         :param periodic_interval: defaults to CONF.periodic_interval
@@ -273,8 +275,7 @@ class Service(service.Service):
             try:
                 x.stop()
             except Exception:
-                LOG.exception(_("Exception occurs when timer stops"))
-                pass
+                LOG.exception(_LE("Exception occurs when timer stops"))
         self.timers = []
 
     def wait(self):
@@ -283,8 +284,7 @@ class Service(service.Service):
             try:
                 x.wait()
             except Exception:
-                LOG.exception(_("Exception occurs when waiting for timer"))
-                pass
+                LOG.exception(_LE("Exception occurs when waiting for timer"))
 
     def periodic_tasks(self, raise_on_error=False):
         """Tasks to be run at a periodic interval."""

@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2013 VMware, Inc.
 # All Rights Reserved
 #
@@ -18,18 +16,29 @@
 
 import netaddr
 from oslo.config import cfg
+from oslo.utils import excutils
 
+from neutron.common import constants
 from neutron.common import exceptions as n_exc
-from neutron.db.firewall import firewall_db
+try:
+    from neutron_fwaas.db.firewall import firewall_db
+except Exception:
+    print("WARNING: missing neutron-fwaas package")
 from neutron.db import l3_db
-from neutron.db.loadbalancer import loadbalancer_db
+try:
+    from neutron_lbaas.db.loadbalancer import loadbalancer_db
+except Exception:
+    print("WARNING: missing neutron-lbaas package")
 from neutron.db import routedserviceinsertion_db as rsi_db
-from neutron.db.vpn import vpn_db
+try:
+    from neutron_vpnaas.db.vpn import vpn_db
+except Exception:
+    print("WARNING: missing neutron-vpnaas package")
 from neutron.extensions import firewall as fw_ext
 from neutron.extensions import l3
 from neutron.extensions import routedserviceinsertion as rsi
 from neutron.extensions import vpnaas as vpn_ext
-from neutron.openstack.common import excutils
+from neutron.i18n import _LE, _LW
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.vmware.api_client import exception as api_exc
@@ -142,8 +151,8 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
                 return self._router_type[router_id]
             router = self._get_router(context, router_id)
 
-        LOG.debug(_("EDGE: router = %s"), router)
-        if router['nsx_attributes']['service_router']:
+        LOG.debug("EDGE: router = %s", router)
+        if router['extra_attributes']['service_router']:
             router_type = ROUTER_TYPE_ADVANCED
         else:
             router_type = ROUTER_TYPE_BASIC
@@ -173,7 +182,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
 
         # NOP for Edge because currently the port will be create internally
         # by VSM
-        LOG.debug(_("EDGE: _vcns_create_ext_gw_port"))
+        LOG.debug("EDGE: _vcns_create_ext_gw_port")
 
     def _vcns_delete_ext_gw_port(self, context, port_data):
         router_id = port_data['device_id']
@@ -182,7 +191,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             return
 
         # NOP for Edge
-        LOG.debug(_("EDGE: _vcns_delete_ext_gw_port"))
+        LOG.debug("EDGE: _vcns_delete_ext_gw_port")
 
     def _get_external_attachment_info(self, context, router):
         gw_port = router.gw_port
@@ -337,7 +346,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         if new_ext_net_id != org_ext_net_id and orgnexthop:
             # network changed, need to remove default gateway before vnic
             # can be configured
-            LOG.debug(_("VCNS: delete default gateway %s"), orgnexthop)
+            LOG.debug("VCNS: delete default gateway %s", orgnexthop)
             self._vcns_update_static_routes(context,
                                             router=router,
                                             edge_id=binding['edge_id'],
@@ -539,7 +548,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             try:
                 self.vcns_driver.delete_lswitch(lswitch_id)
             except exceptions.ResourceNotFound:
-                LOG.warning(_("Did not found lswitch %s in NSX"), lswitch_id)
+                LOG.warning(_LW("Did not found lswitch %s in NSX"), lswitch_id)
 
             # delete edge
             jobdata = {
@@ -760,6 +769,10 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             # do sync work (rollback, re-configure, or make router down)
             self._update_nat_rules(context, router)
             self._update_interface(context, router)
+        elif not router_id:
+            # The floating IP has been disassociated and should be set to DOWN
+            self.update_floatingip_status(context, fip['id'],
+                                          constants.FLOATINGIP_STATUS_DOWN)
         return fip
 
     def delete_floatingip(self, context, id):
@@ -881,15 +894,14 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         except exceptions.VcnsApiException as e:
             self._firewall_set_status(
                 context, fw['id'], service_constants.ERROR)
-            msg = (_("Failed to create firewall on vShield Edge "
-                     "bound on router %s") % router_id)
-            LOG.exception(msg)
+            LOG.exception(_LE("Failed to create firewall on vShield Edge "
+                              "bound on router %s"), router_id)
             raise e
 
         except exceptions.VcnsBadRequest as e:
             self._firewall_set_status(
                 context, fw['id'], service_constants.ERROR)
-            LOG.exception(_("Bad Firewall request Input"))
+            LOG.exception(_LE("Bad Firewall request Input"))
             raise e
 
     def _vcns_delete_firewall(self, context, router_id=None, **kwargs):
@@ -901,7 +913,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         self.vcns_driver.delete_firewall(context, edge_id)
 
     def create_firewall(self, context, firewall):
-        LOG.debug(_("create_firewall() called"))
+        LOG.debug("create_firewall() called")
         router_id = firewall['firewall'].get(vcns_const.ROUTER_ID)
         if not router_id:
             msg = _("router_id is not provided!")
@@ -935,7 +947,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         return fw
 
     def update_firewall(self, context, id, firewall):
-        LOG.debug(_("update_firewall() called"))
+        LOG.debug("update_firewall() called")
         self._ensure_firewall_update_allowed(context, id)
         service_router_binding = self._get_resource_router_id_binding(
             context, firewall_db.Firewall, resource_id=id)
@@ -961,7 +973,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             return fw
 
     def delete_firewall(self, context, id):
-        LOG.debug(_("delete_firewall() called"))
+        LOG.debug("delete_firewall() called")
         self._firewall_set_status(
             context, id, service_constants.PENDING_DELETE)
         service_router_binding = self._get_resource_router_id_binding(
@@ -997,7 +1009,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         return fws
 
     def update_firewall_rule(self, context, id, firewall_rule):
-        LOG.debug(_("update_firewall_rule() called"))
+        LOG.debug("update_firewall_rule() called")
         self._ensure_update_or_delete_firewall_rule(context, id)
         fwr_pre = self.get_firewall_rule(context, id)
         fwr = super(NsxAdvancedPlugin, self).update_firewall_rule(
@@ -1023,7 +1035,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         return fwr
 
     def update_firewall_policy(self, context, id, firewall_policy):
-        LOG.debug(_("update_firewall_policy() called"))
+        LOG.debug("update_firewall_policy() called")
         self._ensure_firewall_policy_update_allowed(context, id)
         firewall_rules_pre = self._make_firewall_rule_list_by_policy_id(
             context, id)
@@ -1050,7 +1062,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         return fwp
 
     def insert_rule(self, context, id, rule_info):
-        LOG.debug(_("insert_rule() called"))
+        LOG.debug("insert_rule() called")
         self._ensure_firewall_policy_update_allowed(context, id)
         fwp = super(NsxAdvancedPlugin, self).insert_rule(
             context, id, rule_info)
@@ -1079,7 +1091,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         return fwp
 
     def remove_rule(self, context, id, rule_info):
-        LOG.debug(_("remove_rule() called"))
+        LOG.debug("remove_rule() called")
         self._ensure_firewall_policy_update_allowed(context, id)
         fwp = super(NsxAdvancedPlugin, self).remove_rule(
             context, id, rule_info)
@@ -1110,8 +1122,8 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
                 context, loadbalancer_db.Vip, resource_id=vip_id)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to find the edge with "
-                                "vip_id: %s"), vip_id)
+                LOG.exception(_LE("Failed to find the edge with "
+                                  "vip_id: %s"), vip_id)
         return self._get_edge_id_by_vcns_edge_binding(
             context, service_router_binding.router_id)
 
@@ -1181,8 +1193,8 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
                     context, edge_id, hm)
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.exception(_("Failed to create healthmonitor "
-                                    "associated with pool id: %s!") % pool_id)
+                    LOG.exception(_LE("Failed to create healthmonitor "
+                                      "associated with pool id: %s!"), pool_id)
                     for monitor_ide in pool.get('health_monitors'):
                         if monitor_ide == monitor_id:
                             break
@@ -1198,7 +1210,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self.vcns_driver.create_pool(context, edge_id, pool, members)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to create pool on vshield edge"))
+                LOG.exception(_LE("Failed to create pool on vshield edge"))
                 self.vcns_driver.delete_pool(
                     context, pool_id, edge_id)
                 for monitor_id in pool.get('health_monitors'):
@@ -1217,7 +1229,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
         self.vcns_driver.update_pool(context, edge_id, pool, members)
 
     def create_vip(self, context, vip):
-        LOG.debug(_("create_vip() called"))
+        LOG.debug("create_vip() called")
         router_id = vip['vip'].get(vcns_const.ROUTER_ID)
         if not router_id:
             msg = _("router_id is not provided!")
@@ -1258,7 +1270,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self.vcns_driver.create_vip(context, edge_id, v)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to create vip!"))
+                LOG.exception(_LE("Failed to create vip!"))
                 self._delete_resource_router_id_binding(
                     context, v['id'], loadbalancer_db.Vip)
                 super(NsxAdvancedPlugin, self).delete_vip(context, v['id'])
@@ -1298,7 +1310,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self.vcns_driver.update_vip(context, v, session_persistence_update)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update vip with id: %s!"), id)
+                LOG.exception(_LE("Failed to update vip with id: %s!"), id)
                 self._resource_set_status(context, loadbalancer_db.Vip,
                                           id, service_constants.ERROR, v)
 
@@ -1315,7 +1327,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self.vcns_driver.delete_vip(context, id)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to delete vip with id: %s!"), id)
+                LOG.exception(_LE("Failed to delete vip with id: %s!"), id)
                 self._resource_set_status(context, loadbalancer_db.Vip,
                                           id, service_constants.ERROR)
         edge_id = self._get_edge_id_by_vip_id(context, id)
@@ -1371,7 +1383,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self._vcns_update_pool(context, p)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update pool with id: %s!"), id)
+                LOG.exception(_LE("Failed to update pool with id: %s!"), id)
                 self._resource_set_status(context, loadbalancer_db.Pool,
                                           p['id'], service_constants.ERROR, p)
         self._resource_set_status(context, loadbalancer_db.Pool,
@@ -1393,7 +1405,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self._vcns_update_pool(context, pool)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update pool with the member"))
+                LOG.exception(_LE("Failed to update pool with the member"))
                 super(NsxAdvancedPlugin, self).delete_member(context, m['id'])
 
         self._resource_set_status(context, loadbalancer_db.Pool,
@@ -1419,8 +1431,8 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
                     self._vcns_update_pool(context, old_pool)
                 except Exception:
                     with excutils.save_and_reraise_exception():
-                        LOG.exception(_("Failed to update old pool "
-                                        "with the member"))
+                        LOG.exception(_LE("Failed to update old pool "
+                                          "with the member"))
                         super(NsxAdvancedPlugin, self).delete_member(
                             context, m['id'])
                 self._resource_set_status(
@@ -1440,7 +1452,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self._vcns_update_pool(context, pool)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update pool with the member"))
+                LOG.exception(_LE("Failed to update pool with the member"))
                 super(NsxAdvancedPlugin, self).delete_member(
                     context, m['id'])
 
@@ -1463,7 +1475,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self._vcns_update_pool(context, pool)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to update pool with the member"))
+                LOG.exception(_LE("Failed to update pool with the member"))
         self._resource_set_status(context, loadbalancer_db.Pool,
                                   pool_id, service_constants.ACTIVE)
 
@@ -1483,8 +1495,8 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
                         context, edge_id, old_hm, hm)
                 except Exception:
                     with excutils.save_and_reraise_exception():
-                        LOG.exception(_("Failed to update monitor "
-                                        "with id: %s!"), id)
+                        LOG.exception(_LE("Failed to update monitor "
+                                          "with id: %s!"), id)
         return hm
 
     def create_pool_health_monitor(self, context,
@@ -1522,7 +1534,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             self._vcns_update_pool(context, pool)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Failed to associate monitor with pool!"))
+                LOG.exception(_LE("Failed to associate monitor with pool!"))
                 self._resource_set_status(
                     context, loadbalancer_db.Pool,
                     pool_id, service_constants.ERROR)
@@ -1553,7 +1565,7 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
             except Exception:
                 with excutils.save_and_reraise_exception():
                     LOG.exception(
-                        _("Failed to update pool with pool_monitor!"))
+                        _LE("Failed to update pool with pool_monitor!"))
                     self._resource_set_status(
                         context, loadbalancer_db.Pool,
                         pool_id, service_constants.ERROR)
@@ -1595,17 +1607,17 @@ class NsxAdvancedPlugin(sr_db.ServiceRouter_mixin,
                 edge_id, sites, enabled=vpn_service.admin_state_up)
         except exceptions.VcnsBadRequest:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_("Bad or unsupported Input request!"))
+                LOG.exception(_LE("Bad or unsupported Input request!"))
         except exceptions.VcnsApiException:
             with excutils.save_and_reraise_exception():
-                msg = (_("Failed to update ipsec VPN configuration "
-                         "with vpnservice: %(vpnservice_id)s on vShield Edge: "
-                         "%(edge_id)s") % {'vpnservice_id': vpnservice_id,
-                                           'edge_id': edge_id})
-                LOG.exception(msg)
+                LOG.exception(_LE("Failed to update ipsec VPN configuration "
+                                  "with vpnservice: %(vpnservice_id)s on "
+                                  "vShield Edge: %(edge_id)s"),
+                              {'vpnservice_id': vpnservice_id,
+                               'edge_id': edge_id})
 
     def create_vpnservice(self, context, vpnservice):
-        LOG.debug(_("create_vpnservice() called"))
+        LOG.debug("create_vpnservice() called")
         router_id = vpnservice['vpnservice'].get('router_id')
         if not self._is_advanced_service_router(context, router_id):
             msg = _("router_id:%s is not an advanced router!") % router_id
@@ -1726,16 +1738,16 @@ class VcnsCallbacks(object):
         neutron_router_id = jobdata['neutron_router_id']
         name = task.userdata['router_name']
         if edge_id:
-            LOG.debug(_("Start deploying %(edge_id)s for router %(name)s"), {
+            LOG.debug("Start deploying %(edge_id)s for router %(name)s", {
                 'edge_id': edge_id,
                 'name': name})
             vcns_db.update_vcns_router_binding(
                 context.session, neutron_router_id, edge_id=edge_id)
         else:
-                LOG.debug(_("Failed to deploy Edge for router %s"), name)
-                vcns_db.update_vcns_router_binding(
-                    context.session, neutron_router_id,
-                    status=service_constants.ERROR)
+            LOG.debug("Failed to deploy Edge for router %s", name)
+            vcns_db.update_vcns_router_binding(
+                context.session, neutron_router_id,
+                status=service_constants.ERROR)
 
     def edge_deploy_result(self, task):
         """callback when deployment task finished."""
@@ -1750,13 +1762,13 @@ class VcnsCallbacks(object):
                 context, neutron_router_id)
         except l3.RouterNotFound:
             # Router might have been deleted before deploy finished
-            LOG.exception(_("Router %s not found"), lrouter['uuid'])
+            LOG.exception(_LE("Router %s not found"), lrouter['uuid'])
 
         if task.status == tasks_const.TaskStatus.COMPLETED:
-            LOG.debug(_("Successfully deployed %(edge_id)s for "
-                        "router %(name)s"), {
-                            'edge_id': task.userdata['edge_id'],
-                            'name': name})
+            LOG.debug("Successfully deployed %(edge_id)s for "
+                      "router %(name)s", {
+                          'edge_id': task.userdata['edge_id'],
+                          'name': name})
             if (router_db and
                     router_db['status'] == service_constants.PENDING_CREATE):
                 router_db['status'] = service_constants.ACTIVE
@@ -1769,7 +1781,7 @@ class VcnsCallbacks(object):
                     context.session, neutron_router_id,
                     status=service_constants.ACTIVE)
         else:
-            LOG.debug(_("Failed to deploy Edge for router %s"), name)
+            LOG.debug("Failed to deploy Edge for router %s", name)
             if router_db:
                 router_db['status'] = service_constants.ERROR
             vcns_db.update_vcns_router_binding(
@@ -1785,25 +1797,25 @@ class VcnsCallbacks(object):
                                                router_id)
 
     def interface_update_result(self, task):
-        LOG.debug(_("interface_update_result %d"), task.status)
+        LOG.debug("interface_update_result %d", task.status)
 
     def snat_create_result(self, task):
-        LOG.debug(_("snat_create_result %d"), task.status)
+        LOG.debug("snat_create_result %d", task.status)
 
     def snat_delete_result(self, task):
-        LOG.debug(_("snat_delete_result %d"), task.status)
+        LOG.debug("snat_delete_result %d", task.status)
 
     def dnat_create_result(self, task):
-        LOG.debug(_("dnat_create_result %d"), task.status)
+        LOG.debug("dnat_create_result %d", task.status)
 
     def dnat_delete_result(self, task):
-        LOG.debug(_("dnat_delete_result %d"), task.status)
+        LOG.debug("dnat_delete_result %d", task.status)
 
     def routes_update_result(self, task):
-        LOG.debug(_("routes_update_result %d"), task.status)
+        LOG.debug("routes_update_result %d", task.status)
 
     def nat_update_result(self, task):
-        LOG.debug(_("nat_update_result %d"), task.status)
+        LOG.debug("nat_update_result %d", task.status)
 
 
 def _process_base_create_lswitch_args(*args, **kwargs):

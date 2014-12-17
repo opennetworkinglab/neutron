@@ -1,7 +1,5 @@
 # Copyright (C) 2013 eNovance SAS <licensing@enovance.com>
 #
-# Author: Sylvain Afchain <sylvain.afchain@enovance.com>
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -17,11 +15,11 @@
 import netaddr
 import sqlalchemy as sa
 from sqlalchemy import orm
+from sqlalchemy import sql
 
 from neutron.api.rpc.agentnotifiers import metering_rpc_agent_api
 from neutron.common import constants
-from neutron.db import api as dbapi
-from neutron.db import db_base_plugin_v2 as base_db
+from neutron.db import common_db_mixin as base_db
 from neutron.db import l3_db
 from neutron.db import model_base
 from neutron.db import models_v2
@@ -41,7 +39,7 @@ class MeteringLabelRule(model_base.BASEV2, models_v2.HasId):
                                   sa.ForeignKey("meteringlabels.id",
                                                 ondelete="CASCADE"),
                                   nullable=False)
-    excluded = sa.Column(sa.Boolean, default=False)
+    excluded = sa.Column(sa.Boolean, default=False, server_default=sql.false())
 
 
 class MeteringLabel(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -54,20 +52,20 @@ class MeteringLabel(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
         primaryjoin="MeteringLabel.tenant_id==Router.tenant_id",
         foreign_keys='MeteringLabel.tenant_id',
         uselist=True)
+    shared = sa.Column(sa.Boolean, default=False, server_default=sql.false())
 
 
 class MeteringDbMixin(metering.MeteringPluginBase,
                       base_db.CommonDbMixin):
 
     def __init__(self):
-        dbapi.register_models()
-
         self.meter_rpc = metering_rpc_agent_api.MeteringAgentNotifyAPI()
 
     def _make_metering_label_dict(self, metering_label, fields=None):
         res = {'id': metering_label['id'],
                'name': metering_label['name'],
                'description': metering_label['description'],
+               'shared': metering_label['shared'],
                'tenant_id': metering_label['tenant_id']}
         return self._fields(res, fields)
 
@@ -79,7 +77,8 @@ class MeteringDbMixin(metering.MeteringPluginBase,
             metering_db = MeteringLabel(id=uuidutils.generate_uuid(),
                                         description=m['description'],
                                         tenant_id=tenant_id,
-                                        name=m['name'])
+                                        name=m['name'],
+                                        shared=m['shared'])
             context.session.add(metering_db)
 
         return self._make_metering_label_dict(metering_db)
@@ -149,7 +148,7 @@ class MeteringDbMixin(metering.MeteringPluginBase,
                        direction, excluded):
         r_ips = self.get_metering_label_rules(context,
                                               filters={'metering_label_id':
-                                                       label_id,
+                                                       [label_id],
                                                        'direction':
                                                        [direction],
                                                        'excluded':
@@ -159,8 +158,8 @@ class MeteringDbMixin(metering.MeteringPluginBase,
         cidrs = [r['remote_ip_prefix'] for r in r_ips]
         new_cidr_ipset = netaddr.IPSet([remote_ip_prefix])
         if (netaddr.IPSet(cidrs) & new_cidr_ipset):
-            raise metering.MeteringLabelRuleOverlaps(remote_ip_prefix=
-                                                     remote_ip_prefix)
+            raise metering.MeteringLabelRuleOverlaps(
+                remote_ip_prefix=remote_ip_prefix)
 
     def create_metering_label_rule(self, context, metering_label_rule):
         m = metering_label_rule['metering_label_rule']
@@ -209,10 +208,19 @@ class MeteringDbMixin(metering.MeteringPluginBase,
 
         return res
 
-    def _process_sync_metering_data(self, labels):
+    def _process_sync_metering_data(self, context, labels):
+        all_routers = None
+
         routers_dict = {}
         for label in labels:
-            routers = label.routers
+            if label.shared:
+                if not all_routers:
+                    all_routers = self._get_collection_query(context,
+                                                             l3_db.Router)
+                routers = all_routers
+            else:
+                routers = label.routers
+
             for router in routers:
                 router_dict = routers_dict.get(
                     router['id'],
@@ -236,4 +244,4 @@ class MeteringDbMixin(metering.MeteringPluginBase,
             labels = (labels.join(MeteringLabel.routers).
                       filter(l3_db.Router.id.in_(router_ids)))
 
-        return self._process_sync_metering_data(labels)
+        return self._process_sync_metering_data(context, labels)

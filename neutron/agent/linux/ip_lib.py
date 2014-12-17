@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
@@ -13,6 +12,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
+import os
 
 import netaddr
 from oslo.config import cfg
@@ -37,9 +38,11 @@ VLAN_INTERFACE_DETAIL = ['vlan protocol 802.1q',
 
 
 class SubProcessBase(object):
-    def __init__(self, root_helper=None, namespace=None):
+    def __init__(self, root_helper=None, namespace=None,
+                 log_fail_as_error=True):
         self.root_helper = root_helper
         self.namespace = namespace
+        self.log_fail_as_error = log_fail_as_error
         try:
             self.force_root = cfg.CONF.ip_lib_force_root
         except cfg.NoSuchOptError:
@@ -53,13 +56,18 @@ class SubProcessBase(object):
         elif self.force_root:
             # Force use of the root helper to ensure that commands
             # will execute in dom0 when running under XenServer/XCP.
-            return self._execute(options, command, args, self.root_helper)
+            return self._execute(options, command, args, self.root_helper,
+                                 log_fail_as_error=self.log_fail_as_error)
         else:
-            return self._execute(options, command, args)
+            return self._execute(options, command, args,
+                                 log_fail_as_error=self.log_fail_as_error)
+
+    def enforce_root_helper(self):
+        if not self.root_helper and os.geteuid() != 0:
+            raise exceptions.SudoRequired()
 
     def _as_root(self, options, command, args, use_root_namespace=False):
-        if not self.root_helper:
-            raise exceptions.SudoRequired()
+        self.enforce_root_helper()
 
         namespace = self.namespace if not use_root_namespace else None
 
@@ -67,18 +75,23 @@ class SubProcessBase(object):
                              command,
                              args,
                              self.root_helper,
-                             namespace)
+                             namespace,
+                             log_fail_as_error=self.log_fail_as_error)
 
     @classmethod
     def _execute(cls, options, command, args, root_helper=None,
-                 namespace=None):
+                 namespace=None, log_fail_as_error=True):
         opt_list = ['-%s' % o for o in options]
         if namespace:
             ip_cmd = ['ip', 'netns', 'exec', namespace, 'ip']
         else:
             ip_cmd = ['ip']
         return utils.execute(ip_cmd + opt_list + [command] + list(args),
-                             root_helper=root_helper)
+                             root_helper=root_helper,
+                             log_fail_as_error=log_fail_as_error)
+
+    def set_log_fail_as_error(self, fail_with_error):
+        self.log_fail_as_error = fail_with_error
 
 
 class IPWrapper(SubProcessBase):
@@ -131,6 +144,10 @@ class IPWrapper(SubProcessBase):
         return (IPDevice(name1, self.root_helper, self.namespace),
                 IPDevice(name2, self.root_helper, namespace2))
 
+    def del_veth(self, name):
+        """Delete a virtual interface between two namespaces."""
+        self._as_root('', 'link', ('del', name))
+
     def ensure_namespace(self, name):
         if not self.netns.exists(name):
             ip = self.netns.add(name)
@@ -182,6 +199,18 @@ class IPWrapper(SubProcessBase):
     def get_namespaces(cls, root_helper):
         output = cls._execute('', 'netns', ('list',), root_helper=root_helper)
         return [l.strip() for l in output.split('\n')]
+
+
+class IpRule(IPWrapper):
+    def add_rule_from(self, ip, table, rule_pr):
+        args = ['add', 'from', ip, 'lookup', table, 'priority', rule_pr]
+        ip = self._as_root('', 'rule', tuple(args))
+        return ip
+
+    def delete_rule_priority(self, rule_pr):
+        args = ['del', 'priority', rule_pr]
+        ip = self._as_root('', 'rule', tuple(args))
+        return ip
 
 
 class IPDevice(SubProcessBase):
@@ -361,20 +390,23 @@ class IpAddrCommand(IpDeviceCommandBase):
 class IpRouteCommand(IpDeviceCommandBase):
     COMMAND = 'route'
 
-    def add_gateway(self, gateway, metric=None):
+    def add_gateway(self, gateway, metric=None, table=None):
         args = ['replace', 'default', 'via', gateway]
         if metric:
             args += ['metric', metric]
         args += ['dev', self.name]
+        if table:
+            args += ['table', table]
         self._as_root(*args)
 
-    def delete_gateway(self, gateway):
-        self._as_root('del',
-                      'default',
-                      'via',
-                      gateway,
-                      'dev',
-                      self.name)
+    def delete_gateway(self, gateway=None, table=None):
+        args = ['del', 'default']
+        if gateway:
+            args += ['via', gateway]
+        args += ['dev', self.name]
+        if table:
+            args += ['table', table]
+        self._as_root(*args)
 
     def list_onlink_routes(self):
         def iterate_routes():
@@ -455,6 +487,18 @@ class IpRouteCommand(IpDeviceCommandBase):
                     self._as_root('append', subnet, 'proto', 'kernel',
                                   'dev', device)
 
+    def add_route(self, cidr, ip, table=None):
+        args = ['replace', cidr, 'via', ip, 'dev', self.name]
+        if table:
+            args += ['table', table]
+        self._as_root(*args)
+
+    def delete_route(self, cidr, ip, table=None):
+        args = ['del', cidr, 'via', ip, 'dev', self.name]
+        if table:
+            args += ['table', table]
+        self._as_root(*args)
+
 
 class IpNeighCommand(IpDeviceCommandBase):
     COMMAND = 'neigh'
@@ -485,16 +529,19 @@ class IpNetnsCommand(IpCommandBase):
 
     def add(self, name):
         self._as_root('add', name, use_root_namespace=True)
-        return IPWrapper(self._parent.root_helper, name)
+        wrapper = IPWrapper(self._parent.root_helper, name)
+        wrapper.netns.execute(['sysctl', '-w',
+                               'net.ipv4.conf.all.promote_secondaries=1'])
+        return wrapper
 
     def delete(self, name):
         self._as_root('delete', name, use_root_namespace=True)
 
-    def execute(self, cmds, addl_env={}, check_exit_code=True):
-        if not self._parent.root_helper:
-            raise exceptions.SudoRequired()
+    def execute(self, cmds, addl_env=None, check_exit_code=True,
+                extra_ok_codes=None):
         ns_params = []
         if self._parent.namespace:
+            self._parent.enforce_root_helper()
             ns_params = ['ip', 'netns', 'exec', self._parent.namespace]
 
         env_params = []
@@ -504,7 +551,7 @@ class IpNetnsCommand(IpCommandBase):
         return utils.execute(
             ns_params + env_params + list(cmds),
             root_helper=self._parent.root_helper,
-            check_exit_code=check_exit_code)
+            check_exit_code=check_exit_code, extra_ok_codes=extra_ok_codes)
 
     def exists(self, name):
         output = self._parent._execute('o', 'netns', ['list'])
@@ -516,15 +563,36 @@ class IpNetnsCommand(IpCommandBase):
 
 
 def device_exists(device_name, root_helper=None, namespace=None):
+    """Return True if the device exists in the namespace."""
     try:
-        address = IPDevice(device_name, root_helper, namespace).link.address
+        dev = IPDevice(device_name, root_helper, namespace)
+        dev.set_log_fail_as_error(False)
+        address = dev.link.address
     except RuntimeError:
         return False
     return bool(address)
 
 
+def device_exists_with_ip_mac(device_name, ip_cidr, mac, namespace=None,
+                              root_helper=None):
+    """Return True if the device with the given IP and MAC addresses
+    exists in the namespace.
+    """
+    try:
+        device = IPDevice(device_name, root_helper, namespace)
+        if mac != device.link.address:
+            return False
+        if ip_cidr not in (ip['cidr'] for ip in device.addr.list()):
+            return False
+    except RuntimeError:
+        return False
+    else:
+        return True
+
+
 def ensure_device_is_ready(device_name, root_helper=None, namespace=None):
     dev = IPDevice(device_name, root_helper, namespace)
+    dev.set_log_fail_as_error(False)
     try:
         # Ensure the device is up, even if it is already up. If the device
         # doesn't exist, a RuntimeError will be raised.

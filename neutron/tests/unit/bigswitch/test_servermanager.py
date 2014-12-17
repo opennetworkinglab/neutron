@@ -11,9 +11,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Kevin Benton, kevin.benton@bigswitch.com
-#
 import contextlib
 import httplib
 import socket
@@ -21,9 +18,13 @@ import ssl
 
 import mock
 from oslo.config import cfg
+from oslo.db import exception as db_exc
+from oslo.serialization import jsonutils
+from oslo.utils import importutils
 
+from neutron import context
 from neutron import manager
-from neutron.openstack.common import importutils
+from neutron.plugins.bigswitch.db import consistency_db
 from neutron.plugins.bigswitch import servermanager
 from neutron.tests.unit.bigswitch import test_restproxy_plugin as test_rp
 
@@ -72,7 +73,17 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
                 pl.servers._get_combined_cert_for_server,
                 *('example.org', 443)
             )
-            sslgetmock.assert_has_calls([mock.call(('example.org', 443))])
+            sslgetmock.assert_has_calls([mock.call(
+                  ('example.org', 443), ssl_version=ssl.PROTOCOL_TLSv1)])
+
+    def test_consistency_watchdog_stops_with_0_polling_interval(self):
+        pl = manager.NeutronManager.get_plugin()
+        pl.servers.capabilities = ['consistency']
+        self.watch_p.stop()
+        with mock.patch('eventlet.sleep') as smock:
+            # should return immediately a polling interval of 0
+            pl.servers._consistency_watchdog(0)
+            self.assertFalse(smock.called)
 
     def test_consistency_watchdog(self):
         pl = manager.NeutronManager.get_plugin()
@@ -83,30 +94,38 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
             mock.patch(
                 SERVERMANAGER + '.ServerPool.rest_call',
                 side_effect=servermanager.RemoteRestError(
-                    reason='Failure to break loop'
+                    reason='Failure to trigger except clause.'
                 )
+            ),
+            mock.patch(
+                SERVERMANAGER + '.LOG.exception',
+                side_effect=KeyError('Failure to break loop')
             )
-        ) as (smock, rmock):
+        ) as (smock, rmock, lmock):
             # should return immediately without consistency capability
             pl.servers._consistency_watchdog()
             self.assertFalse(smock.called)
             pl.servers.capabilities = ['consistency']
-            self.assertRaises(servermanager.RemoteRestError,
+            self.assertRaises(KeyError,
                               pl.servers._consistency_watchdog)
+            rmock.assert_called_with('GET', '/health', '', {}, [], False)
+            self.assertEqual(1, len(lmock.mock_calls))
 
     def test_consistency_hash_header(self):
         # mock HTTP class instead of rest_call so we can see headers
         with mock.patch(HTTPCON) as conmock:
             rv = conmock.return_value
             rv.getresponse.return_value.getheader.return_value = 'HASHHEADER'
-            with self.network():
+            rv.getresponse.return_value.status = 200
+            rv.getresponse.return_value.read.return_value = ''
+            with self.network() as network:
                 callheaders = rv.request.mock_calls[0][1][3]
                 self.assertIn('X-BSN-BVS-HASH-MATCH', callheaders)
                 # first call will be empty to indicate no previous state hash
                 self.assertEqual(callheaders['X-BSN-BVS-HASH-MATCH'], '')
                 # change the header that will be received on delete call
                 rv.getresponse.return_value.getheader.return_value = 'HASH2'
-
+            self._delete('networks', network['network']['id'])
             # net delete should have used header received on create
             callheaders = rv.request.mock_calls[1][1][3]
             self.assertEqual(callheaders['X-BSN-BVS-HASH-MATCH'], 'HASHHEADER')
@@ -117,6 +136,26 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
                 self.assertIn('X-BSN-BVS-HASH-MATCH', callheaders)
                 self.assertEqual(callheaders['X-BSN-BVS-HASH-MATCH'],
                                  'HASH2')
+
+    def test_consistency_hash_header_no_update_on_bad_response(self):
+        # mock HTTP class instead of rest_call so we can see headers
+        with mock.patch(HTTPCON) as conmock:
+            rv = conmock.return_value
+            rv.getresponse.return_value.getheader.return_value = 'HASHHEADER'
+            rv.getresponse.return_value.status = 200
+            rv.getresponse.return_value.read.return_value = ''
+            with self.network() as net:
+                # change the header that will be received on delete call
+                rv.getresponse.return_value.getheader.return_value = 'EVIL'
+                rv.getresponse.return_value.status = 'GARBAGE'
+                self._delete('networks', net['network']['id'])
+
+            # create again should not use header from delete call
+            with self.network():
+                callheaders = rv.request.mock_calls[2][1][3]
+                self.assertIn('X-BSN-BVS-HASH-MATCH', callheaders)
+                self.assertEqual(callheaders['X-BSN-BVS-HASH-MATCH'],
+                                 'HASHHEADER')
 
     def test_file_put_contents(self):
         pl = manager.NeutronManager.get_plugin()
@@ -173,6 +212,23 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
         # verify new header made it in
         self.assertIn('EXTRA-HEADER', callheaders)
         self.assertEqual(callheaders['EXTRA-HEADER'], 'HI')
+
+    def test_req_context_header(self):
+        sp = manager.NeutronManager.get_plugin().servers
+        ncontext = context.Context('uid', 'tid')
+        sp.set_context(ncontext)
+        with mock.patch(HTTPCON) as conmock:
+            rv = conmock.return_value
+            rv.getresponse.return_value.getheader.return_value = 'HASHHEADER'
+            sp.rest_action('GET', '/')
+        callheaders = rv.request.mock_calls[0][1][3]
+        self.assertIn(servermanager.REQ_CONTEXT_HEADER, callheaders)
+        ctxdct = ncontext.to_dict()
+        # auth token is not included
+        ctxdct.pop('auth_token')
+        self.assertEqual(
+            ctxdct, jsonutils.loads(
+                  callheaders[servermanager.REQ_CONTEXT_HEADER]))
 
     def test_capabilities_retrieval(self):
         sp = servermanager.ServerPool()
@@ -337,6 +393,38 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
         self.assertFalse(pl.servers.server_failure((404,),
                                                    ignore_codes=[404]))
 
+    def test_retry_on_unavailable(self):
+        pl = manager.NeutronManager.get_plugin()
+        with contextlib.nested(
+            mock.patch(SERVERMANAGER + '.ServerProxy.rest_call',
+                       return_value=(httplib.SERVICE_UNAVAILABLE, 0, 0, 0)),
+            mock.patch(SERVERMANAGER + '.time.sleep')
+        ) as (srestmock, tmock):
+            # making a call should trigger retries with sleeps in between
+            pl.servers.rest_call('GET', '/', '', None, [])
+            rest_call = [mock.call('GET', '/', '', None, False, reconnect=True,
+                                   hash_handler=mock.ANY)]
+            rest_call_count = (
+                servermanager.HTTP_SERVICE_UNAVAILABLE_RETRY_COUNT + 1)
+            srestmock.assert_has_calls(rest_call * rest_call_count)
+            sleep_call = [mock.call(
+                servermanager.HTTP_SERVICE_UNAVAILABLE_RETRY_INTERVAL)]
+            # should sleep 1 less time than the number of calls
+            sleep_call_count = rest_call_count - 1
+            tmock.assert_has_calls(sleep_call * sleep_call_count)
+
+    def test_delete_failure_sets_bad_hash(self):
+        pl = manager.NeutronManager.get_plugin()
+        hash_handler = consistency_db.HashHandler()
+        with mock.patch(
+            SERVERMANAGER + '.ServerProxy.rest_call',
+            return_value=(httplib.INTERNAL_SERVER_ERROR, 0, 0, 0)
+        ):
+            # a failed delete call should put a bad hash in the DB
+            pl.servers.rest_call('DELETE', '/', '', None, [])
+            self.assertEqual('INCONSISTENT,INCONSISTENT',
+                             hash_handler.read_for_update())
+
     def test_conflict_triggers_sync(self):
         pl = manager.NeutronManager.get_plugin()
         with mock.patch(
@@ -346,7 +434,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
             # making a call should trigger a conflict sync
             pl.servers.rest_call('GET', '/', '', None, [])
             srestmock.assert_has_calls([
-                mock.call('GET', '/', '', None, False, reconnect=True),
+                mock.call('GET', '/', '', None, False, reconnect=True,
+                          hash_handler=mock.ANY),
                 mock.call('PUT', '/topology',
                           {'routers': [], 'networks': []},
                           timeout=None)
@@ -370,13 +459,17 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
     def test_floating_calls(self):
         pl = manager.NeutronManager.get_plugin()
         with mock.patch(SERVERMANAGER + '.ServerPool.rest_action') as ramock:
-            pl.servers.rest_create_floatingip('tenant', {'id': 'somefloat'})
-            pl.servers.rest_update_floatingip('tenant', {'name': 'myfl'}, 'id')
+            body1 = {'id': 'somefloat'}
+            body2 = {'name': 'myfl'}
+            pl.servers.rest_create_floatingip('tenant', body1)
+            pl.servers.rest_update_floatingip('tenant', body2, 'id')
             pl.servers.rest_delete_floatingip('tenant', 'oldid')
             ramock.assert_has_calls([
                 mock.call('PUT', '/tenants/tenant/floatingips/somefloat',
+                          body1,
                           errstr=u'Unable to create floating IP: %s'),
                 mock.call('PUT', '/tenants/tenant/floatingips/id',
+                          body2,
                           errstr=u'Unable to update floating IP: %s'),
                 mock.call('DELETE', '/tenants/tenant/floatingips/oldid',
                           errstr=u'Unable to delete floating IP: %s')
@@ -391,7 +484,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
             ('www.example.org', 443), 90, '127.0.0.1'
         )])
         self.wrap_mock.assert_has_calls([mock.call(
-            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE
+            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE,
+            ssl_version=ssl.PROTOCOL_TLSv1
         )])
         self.assertEqual(con.sock, self.wrap_mock())
 
@@ -406,7 +500,8 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
         )])
         self.wrap_mock.assert_has_calls([mock.call(
             self.socket_mock(), None, None, ca_certs='SOMECERTS.pem',
-            cert_reqs=ssl.CERT_REQUIRED
+            cert_reqs=ssl.CERT_REQUIRED,
+            ssl_version=ssl.PROTOCOL_TLSv1
         )])
         self.assertEqual(con.sock, self.wrap_mock())
 
@@ -417,16 +512,14 @@ class ServerManagerTests(test_rp.BigSwitchProxyPluginV2TestCase):
         con = self.sm.HTTPSConnectionWithValidation(
             'www.example.org', 443, timeout=90)
         con.source_address = '127.0.0.1'
-        if not hasattr(con, 'set_tunnel'):
-            # no tunnel support in py26
-            return
         con.set_tunnel('myproxy.local', 3128)
         con.request("GET", "/")
         self.socket_mock.assert_has_calls([mock.call(
             ('www.example.org', 443), 90, '127.0.0.1'
         )])
         self.wrap_mock.assert_has_calls([mock.call(
-            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE
+            self.socket_mock(), None, None, cert_reqs=ssl.CERT_NONE,
+            ssl_version=ssl.PROTOCOL_TLSv1
         )])
         # _tunnel() doesn't take any args
         tunnel_mock.assert_has_calls([mock.call()])
@@ -450,3 +543,126 @@ class TestSockets(test_rp.BigSwitchProxyPluginV2TestCase):
         con = self.sm.HTTPSConnectionWithValidation('127.0.0.1', 0, timeout=1)
         # if httpcon was created, a connect attempt should raise a socket error
         self.assertRaises(socket.error, con.connect)
+
+
+class HashLockingTests(test_rp.BigSwitchProxyPluginV2TestCase):
+
+    def _get_hash_from_handler_db(self, handler):
+        with handler.session.begin(subtransactions=True):
+            res = (handler.session.query(consistency_db.ConsistencyHash).
+                   filter_by(hash_id=handler.hash_id).first())
+            return res.hash
+
+    def test_hash_handle_lock_no_initial_record(self):
+        handler = consistency_db.HashHandler()
+        h1 = handler.read_for_update()
+        # return to caller should be empty even with lock in DB
+        self.assertFalse(h1)
+        # db should have a lock marker
+        self.assertEqual(handler.lock_marker,
+                         self._get_hash_from_handler_db(handler))
+        # an entry should clear the lock
+        handler.put_hash('DIGEST')
+        self.assertEqual('DIGEST', self._get_hash_from_handler_db(handler))
+
+    def test_hash_handle_lock_existing_record(self):
+        handler = consistency_db.HashHandler()
+        handler.put_hash('DIGEST')  # set initial hash
+
+        h1 = handler.read_for_update()
+        self.assertEqual('DIGEST', h1)
+        self.assertEqual(handler.lock_marker + 'DIGEST',
+                         self._get_hash_from_handler_db(handler))
+
+        # make sure update works
+        handler.put_hash('DIGEST2')
+        self.assertEqual('DIGEST2', self._get_hash_from_handler_db(handler))
+
+    def test_db_duplicate_on_insert(self):
+        handler = consistency_db.HashHandler()
+        with mock.patch.object(
+            handler.session, 'add', side_effect=[db_exc.DBDuplicateEntry, '']
+        ) as add_mock:
+            handler.read_for_update()
+            # duplicate insert failure should result in retry
+            self.assertEqual(2, add_mock.call_count)
+
+    def test_update_hit_no_records(self):
+        handler = consistency_db.HashHandler()
+        # set initial hash so update will be required
+        handler.put_hash('DIGEST')
+        with mock.patch.object(handler._FACADE, 'get_engine') as ge:
+            conn = ge.return_value.begin.return_value.__enter__.return_value
+            firstresult = mock.Mock()
+            # a rowcount of 0 simulates the effect of another db client
+            # updating the same record the handler was trying to update
+            firstresult.rowcount = 0
+            secondresult = mock.Mock()
+            secondresult.rowcount = 1
+            conn.execute.side_effect = [firstresult, secondresult]
+            handler.read_for_update()
+            # update should have been called again after the failure
+            self.assertEqual(2, conn.execute.call_count)
+
+    def test_handler_already_holding_lock(self):
+        handler = consistency_db.HashHandler()
+        handler.read_for_update()  # lock the table
+        with mock.patch.object(handler._FACADE, 'get_engine') as ge:
+            handler.read_for_update()
+            # get engine should not have been called because no update
+            # should have been made
+            self.assertFalse(ge.called)
+
+    def test_clear_lock(self):
+        handler = consistency_db.HashHandler()
+        handler.put_hash('SOMEHASH')
+        handler.read_for_update()  # lock the table
+        self.assertEqual(handler.lock_marker + 'SOMEHASH',
+                         self._get_hash_from_handler_db(handler))
+        handler.clear_lock()
+        self.assertEqual('SOMEHASH',
+                         self._get_hash_from_handler_db(handler))
+
+    def test_clear_lock_skip_after_steal(self):
+        handler1 = consistency_db.HashHandler()
+        handler1.read_for_update()  # lock the table
+        handler2 = consistency_db.HashHandler()
+        with mock.patch.object(consistency_db, 'MAX_LOCK_WAIT_TIME', new=0):
+            handler2.read_for_update()
+            before = self._get_hash_from_handler_db(handler1)
+            # handler1 should not clear handler2's lock
+            handler1.clear_lock()
+            self.assertEqual(before, self._get_hash_from_handler_db(handler1))
+
+    def test_take_lock_from_other(self):
+        handler1 = consistency_db.HashHandler()
+        handler1.read_for_update()  # lock the table
+        handler2 = consistency_db.HashHandler()
+        with mock.patch.object(consistency_db, 'MAX_LOCK_WAIT_TIME') as mlock:
+            # make handler2 wait for only one iteration
+            mlock.__lt__.side_effect = [False, True]
+            handler2.read_for_update()
+            # once MAX LOCK exceeded, comparisons should stop due to lock steal
+            self.assertEqual(2, mlock.__lt__.call_count)
+            dbentry = self._get_hash_from_handler_db(handler1)
+            # handler2 should have the lock
+            self.assertIn(handler2.lock_marker, dbentry)
+            self.assertNotIn(handler1.lock_marker, dbentry)
+            # lock protection only blocks read_for_update, anyone can change
+            handler1.put_hash('H1')
+
+    def test_failure_to_steal_lock(self):
+        handler1 = consistency_db.HashHandler()
+        handler1.read_for_update()  # lock the table
+        handler2 = consistency_db.HashHandler()
+        with contextlib.nested(
+            mock.patch.object(consistency_db, 'MAX_LOCK_WAIT_TIME'),
+            mock.patch.object(handler2, '_optimistic_update_hash_record',
+                              side_effect=[False, True])
+        ) as (mlock, oplock):
+            # handler2 will go through 2 iterations since the lock will fail on
+            # the first attempt
+            mlock.__lt__.side_effect = [False, True, False, True]
+            handler2.read_for_update()
+            self.assertEqual(4, mlock.__lt__.call_count)
+            self.assertEqual(2, oplock.call_count)

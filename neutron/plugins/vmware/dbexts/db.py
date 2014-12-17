@@ -14,11 +14,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo.db import exception as db_exc
+from oslo.utils import excutils
 from sqlalchemy.orm import exc
 
 import neutron.db.api as db
-from neutron.openstack.common.db import exception as db_exc
-from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.vmware.dbexts import models
 from neutron.plugins.vmware.dbexts import networkgw_db
@@ -33,11 +33,17 @@ def get_network_bindings(session, network_id):
             all())
 
 
-def get_network_bindings_by_vlanid(session, vlan_id):
+def get_network_bindings_by_vlanid_and_physical_net(session, vlan_id,
+                                                    phy_uuid):
     session = session or db.get_session()
     return (session.query(models.TzNetworkBinding).
-            filter_by(vlan_id=vlan_id).
+            filter_by(vlan_id=vlan_id, phy_uuid=phy_uuid).
             all())
+
+
+def delete_network_bindings(session, network_id):
+    return (session.query(models.TzNetworkBinding).
+            filter_by(network_id=network_id).delete())
 
 
 def add_network_binding(session, network_id, binding_type, phy_uuid, vlan_id):
@@ -73,7 +79,7 @@ def add_neutron_nsx_port_mapping(session, neutron_id,
             # this should not occur whilst a mapping already exists
             current = get_nsx_switch_and_port_id(session, neutron_id)
             if current[1] == nsx_port_id:
-                LOG.debug(_("Port mapping for %s already available"),
+                LOG.debug("Port mapping for %s already available",
                           neutron_id)
                 ctxt.reraise = False
     except db_exc.DBError:
@@ -120,8 +126,8 @@ def get_nsx_switch_and_port_id(session, neutron_id):
                    one())
         return mapping['nsx_switch_id'], mapping['nsx_port_id']
     except exc.NoResultFound:
-        LOG.debug(_("NSX identifiers for neutron port %s not yet "
-                    "stored in Neutron DB"), neutron_id)
+        LOG.debug("NSX identifiers for neutron port %s not yet "
+                  "stored in Neutron DB", neutron_id)
         return None, None
 
 
@@ -131,8 +137,8 @@ def get_nsx_router_id(session, neutron_id):
                    filter_by(neutron_id=neutron_id).one())
         return mapping['nsx_id']
     except exc.NoResultFound:
-        LOG.debug(_("NSX identifiers for neutron router %s not yet "
-                    "stored in Neutron DB"), neutron_id)
+        LOG.debug("NSX identifiers for neutron router %s not yet "
+                  "stored in Neutron DB", neutron_id)
 
 
 def get_nsx_security_group_id(session, neutron_id):
@@ -146,8 +152,8 @@ def get_nsx_security_group_id(session, neutron_id):
                    one())
         return mapping['nsx_id']
     except exc.NoResultFound:
-        LOG.debug(_("NSX identifiers for neutron security group %s not yet "
-                    "stored in Neutron DB"), neutron_id)
+        LOG.debug("NSX identifiers for neutron security group %s not yet "
+                  "stored in Neutron DB", neutron_id)
         return None
 
 

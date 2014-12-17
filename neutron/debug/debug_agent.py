@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2012,  Nachi Ueno,  NTT MCL,  Inc.
 # All Rights Reserved.
 #
@@ -25,6 +23,7 @@ from neutron.agent.common import config
 from neutron.agent.linux import dhcp
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import utils
+from neutron.i18n import _LW
 from neutron.openstack.common import log as logging
 
 
@@ -66,7 +65,7 @@ class NeutronDebugAgent():
             namespace = self._get_namespace(port)
 
         if ip_lib.device_exists(interface_name, self.root_helper, namespace):
-            LOG.debug(_('Reusing existing device: %s.'), interface_name)
+            LOG.debug('Reusing existing device: %s.', interface_name)
         else:
             self.driver.plug(network.id,
                              port.id,
@@ -95,7 +94,8 @@ class NeutronDebugAgent():
         network.subnets = obj_subnet
         return network
 
-    def clear_probe(self):
+    def clear_probes(self):
+        """Returns number of deleted probes"""
         ports = self.client.list_ports(
             device_id=socket.gethostname(),
             device_owner=[DEVICE_OWNER_NETWORK_PROBE,
@@ -103,6 +103,7 @@ class NeutronDebugAgent():
         info = ports['ports']
         for port in info:
             self.delete_probe(port['id'])
+        return len(info)
 
     def delete_probe(self, port_id):
         port = dhcp.DictModel(self.client.show_port(port_id)['port'])
@@ -119,7 +120,7 @@ class NeutronDebugAgent():
             try:
                 ip.netns.delete(namespace)
             except Exception:
-                LOG.warn(_('Failed to delete namespace %s'), namespace)
+                LOG.warn(_LW('Failed to delete namespace %s'), namespace)
         else:
             self.driver.unplug(self.driver.get_device_name(port),
                                bridge=bridge)

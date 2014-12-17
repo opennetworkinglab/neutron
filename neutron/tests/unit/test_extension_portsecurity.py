@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from webob import exc
 
 from neutron.api.v2 import attributes as attr
 from neutron import context
@@ -370,8 +371,8 @@ class TestPortSecurity(PortSecurityDBTestCase):
                 self.assertEqual(res.status_int, 403)
 
     def test_update_port_security_off_shared_network(self):
-        with self.network(shared=True, do_delete=False) as net:
-            with self.subnet(network=net, do_delete=False):
+        with self.network(shared=True) as net:
+            with self.subnet(network=net):
                 res = self._create_port('json', net['network']['id'],
                                         tenant_id='not_network_owner',
                                         set_context=True)
@@ -384,9 +385,4 @@ class TestPortSecurity(PortSecurityDBTestCase):
                 req.environ['neutron.context'] = context.Context(
                     '', 'not_network_owner')
                 res = req.get_response(self.api)
-                # TODO(salvatore-orlando): Expected error is 404 because
-                # the current API controller always returns this error
-                # code for any policy check failures on update.
-                # It should be 404 when the caller cannot access the whole
-                # resource, and 403 when it cannot access a single attribute
-                self.assertEqual(res.status_int, 404)
+                self.assertEqual(res.status_int, exc.HTTPForbidden.code)

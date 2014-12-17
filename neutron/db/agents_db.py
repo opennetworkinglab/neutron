@@ -16,18 +16,21 @@
 from eventlet import greenthread
 
 from oslo.config import cfg
+from oslo.db import exception as db_exc
+from oslo import messaging
+from oslo.serialization import jsonutils
+from oslo.utils import excutils
+from oslo.utils import timeutils
 import sqlalchemy as sa
 from sqlalchemy.orm import exc
+from sqlalchemy import sql
 
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import agent as ext_agent
+from neutron.i18n import _LW
 from neutron import manager
-from neutron.openstack.common.db import exception as db_exc
-from neutron.openstack.common import excutils
-from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
-from neutron.openstack.common import timeutils
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.register_opt(
@@ -53,7 +56,7 @@ class Agent(model_base.BASEV2, models_v2.HasId):
     # TOPIC.host is a target topic
     host = sa.Column(sa.String(255), nullable=False)
     admin_state_up = sa.Column(sa.Boolean, default=True,
-                               nullable=False)
+                               server_default=sql.true(), nullable=False)
     # the time when first report came from agents
     created_at = sa.Column(sa.DateTime, nullable=False)
     # the time when first report came after agents start
@@ -80,6 +83,23 @@ class AgentDbMixin(ext_agent.AgentPluginBase):
             raise ext_agent.AgentNotFound(id=id)
         return agent
 
+    def get_enabled_agent_on_host(self, context, agent_type, host):
+        """Return agent of agent_type for the specified host."""
+        query = context.session.query(Agent)
+        query = query.filter(Agent.agent_type == agent_type,
+                             Agent.host == host,
+                             Agent.admin_state_up == sql.true())
+        try:
+            agent = query.one()
+        except exc.NoResultFound:
+            LOG.debug('No enabled %(agent_type)s agent on host '
+                      '%(host)s' % {'agent_type': agent_type, 'host': host})
+            return
+        if self.is_agent_down(agent.heartbeat_timestamp):
+            LOG.warn(_LW('%(agent_type)s agent %(agent_id)s is not active'),
+                     {'agent_type': agent_type, 'agent_id': agent.id})
+        return agent
+
     @classmethod
     def is_agent_down(cls, heart_beat_time):
         return timeutils.is_older_than(heart_beat_time,
@@ -89,8 +109,8 @@ class AgentDbMixin(ext_agent.AgentPluginBase):
         try:
             conf = jsonutils.loads(agent_db.configurations)
         except Exception:
-            msg = _('Configuration for agent %(agent_type)s on host %(host)s'
-                    ' is invalid.')
+            msg = _LW('Configuration for agent %(agent_type)s on host %(host)s'
+                      ' is invalid.')
             LOG.warn(msg, {'agent_type': agent_db.agent_type,
                            'host': agent_db.host})
             conf = {}
@@ -198,10 +218,11 @@ class AgentDbMixin(ext_agent.AgentPluginBase):
 class AgentExtRpcCallback(object):
     """Processes the rpc report in plugin implementations."""
 
-    RPC_API_VERSION = '1.0'
+    target = messaging.Target(version='1.0')
     START_TIME = timeutils.utcnow()
 
     def __init__(self, plugin=None):
+        super(AgentExtRpcCallback, self).__init__()
         self.plugin = plugin
 
     def report_state(self, context, **kwargs):
@@ -209,7 +230,7 @@ class AgentExtRpcCallback(object):
         time = kwargs['time']
         time = timeutils.parse_strtime(time)
         if self.START_TIME > time:
-            LOG.debug(_("Message with invalid timestamp received"))
+            LOG.debug("Message with invalid timestamp received")
             return
         agent_state = kwargs['agent_state']['agent_state']
         if not self.plugin:

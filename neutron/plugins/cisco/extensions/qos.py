@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
 # Copyright 2011 Cisco Systems, Inc.
 # All rights reserved.
 #
@@ -14,9 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Ying Liu, Cisco Systems, Inc.
-#
 
 from webob import exc
 
@@ -99,7 +94,7 @@ class QosController(common.NeutronController, wsgi.Controller):
         result = [builder.build(qos, is_detail)['qos'] for qos in qoss]
         return dict(qoss=result)
 
-    # pylint: disable-msg=E1101
+    # pylint: disable=no-member
     def show(self, request, tenant_id, id):
         """Returns qos details for the given qos id."""
         try:

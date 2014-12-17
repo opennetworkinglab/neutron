@@ -12,7 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-# @author: Paul Michali Cisco Systems, Inc.
 
 from oslo.config import cfg
 
@@ -52,8 +51,8 @@ def build_resource_info(plural_mappings, resource_map, which_service,
     :param which_service: The name of the service for which the WSGI resources
                           are being created. This name will be used to pass
                           the appropriate plugin to the WSGI resource.
-                          It can be set to None or "CORE"to create WSGI
-                          resources for the the core plugin
+                          It can be set to None or "CORE" to create WSGI
+                          resources for the core plugin
     :param action_map: custom resource actions
     :param register_quota: it can be set to True to register quotas for the
                            resource(s) being created

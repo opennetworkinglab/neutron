@@ -1,4 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
 # Copyright 2013 PLUMgrid, Inc. All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,19 +11,17 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# @author: Edgar Magana, emagana@plumgrid.com, PLUMgrid, Inc.
 
 """
 Test cases for  Neutron PLUMgrid Plug-in
 """
 
 import mock
+from oslo.utils import importutils
 
 from neutron.extensions import portbindings
 from neutron.extensions import providernet as provider
 from neutron import manager
-from neutron.openstack.common import importutils
 from neutron.plugins.plumgrid.plumgrid_plugin import plumgrid_plugin
 from neutron.tests.unit import _test_extension_portbindings as test_bindings
 from neutron.tests.unit import test_db_plugin as test_plugin
@@ -81,23 +78,24 @@ class TestPlumgridPluginPortsV2(test_plugin.TestPortsV2,
 
 class TestPlumgridPluginSubnetsV2(test_plugin.TestSubnetsV2,
                                   PLUMgridPluginV2TestCase):
-    def test_create_subnet_default_gw_conflict_allocation_pool_returns_409(
-            self):
-        self.skipTest("Plugin does not support Neutron allocation process")
+    _unsupported = (
+        'test_create_subnet_default_gw_conflict_allocation_pool_returns_409',
+        'test_create_subnet_defaults', 'test_create_subnet_gw_values',
+        'test_create_subnet_ipv6_gw_values',
+        'test_update_subnet_gateway_in_allocation_pool_returns_409',
+        'test_update_subnet_allocation_pools',
+        'test_update_subnet_allocation_pools_invalid_pool_for_cidr')
 
-    def test_create_subnet_defaults(self):
-        self.skipTest("Plugin does not support Neutron allocation process")
-
-    def test_create_subnet_gw_values(self):
-        self.skipTest("Plugin does not support Neutron allocation process")
-
-    def test_update_subnet_gateway_in_allocation_pool_returns_409(self):
-        self.skipTest("Plugin does not support Neutron allocation process")
+    def setUp(self):
+        if self._testMethodName in self._unsupported:
+            self.skipTest("Plugin does not support Neutron allocation process")
+        super(TestPlumgridPluginSubnetsV2, self).setUp()
 
 
 class TestPlumgridPluginPortBinding(PLUMgridPluginV2TestCase,
                                     test_bindings.PortBindingsTestCase):
     VIF_TYPE = portbindings.VIF_TYPE_IOVISOR
+    HAS_PORT_FILTER = True
 
     def setUp(self):
         super(TestPlumgridPluginPortBinding, self).setUp()
@@ -124,6 +122,19 @@ class TestPlumgridAllocationPool(PLUMgridPluginV2TestCase):
                   'ip_version': 4}
         allocation_pool = [{"start": '10.0.0.2',
                             "end": '10.0.0.253'}]
+        context = None
+        plugin = manager.NeutronManager.get_plugin()
+        pool = plugin._allocate_pools_for_subnet(context, subnet)
+        self.assertEqual(allocation_pool, pool)
+
+    def test_conflict_dhcp_gw_ip(self):
+        cidr = '10.0.0.0/24'
+        gateway_ip = '10.0.0.1'
+        subnet = {'gateway_ip': gateway_ip,
+                  'cidr': cidr,
+                  'ip_version': 4}
+        allocation_pool = [{"start": '10.0.0.3',
+                            "end": '10.0.0.254'}]
         context = None
         plugin = manager.NeutronManager.get_plugin()
         pool = plugin._allocate_pools_for_subnet(context, subnet)

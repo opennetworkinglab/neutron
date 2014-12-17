@@ -14,11 +14,13 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import eventlet
 import httplib
-import json
 import urllib
 
+import eventlet
+from oslo.serialization import jsonutils
+
+from neutron.i18n import _LI, _LW
 from neutron.openstack.common import log as logging
 from neutron.plugins.vmware.api_client import request
 
@@ -48,7 +50,6 @@ class EventletApiRequest(request.ApiRequest):
 
     def __init__(self, client_obj, url, method="GET", body=None,
                  headers=None,
-                 request_timeout=request.DEFAULT_REQUEST_TIMEOUT,
                  retries=request.DEFAULT_RETRIES,
                  auto_login=True,
                  redirects=request.DEFAULT_REDIRECTS,
@@ -59,7 +60,7 @@ class EventletApiRequest(request.ApiRequest):
         self._method = method
         self._body = body
         self._headers = headers or {}
-        self._request_timeout = request_timeout
+        self._request_timeout = http_timeout * retries
         self._retries = retries
         self._auto_login = auto_login
         self._redirects = redirects
@@ -109,7 +110,7 @@ class EventletApiRequest(request.ApiRequest):
         '''Return a copy of this request instance.'''
         return EventletApiRequest(
             self._api_client, self._url, self._method, self._body,
-            self._headers, self._request_timeout, self._retries,
+            self._headers, self._retries,
             self._auto_login, self._redirects, self._http_timeout)
 
     def _run(self):
@@ -119,7 +120,7 @@ class EventletApiRequest(request.ApiRequest):
             with eventlet.timeout.Timeout(self._request_timeout, False):
                 return self._handle_request()
 
-            LOG.info(_('[%d] Request timeout.'), self._rid())
+            LOG.info(_LI('[%d] Request timeout.'), self._rid())
             self._request_error = Exception(_('Request timeout'))
             return None
         else:
@@ -146,14 +147,15 @@ class EventletApiRequest(request.ApiRequest):
                         continue
                     # else fall through to return the error code
 
-                LOG.debug(_("[%(rid)d] Completed request '%(method)s %(url)s'"
-                            ": %(status)s"),
+                LOG.debug("[%(rid)d] Completed request '%(method)s %(url)s'"
+                          ": %(status)s",
                           {'rid': self._rid(), 'method': self._method,
                            'url': self._url, 'status': req.status})
                 self._request_error = None
                 response = req
             else:
-                LOG.info(_('[%(rid)d] Error while handling request: %(req)s'),
+                LOG.info(_LI('[%(rid)d] Error while handling request: '
+                             '%(req)s'),
                          {'rid': self._rid(), 'req': req})
                 self._request_error = req
                 response = None
@@ -200,7 +202,7 @@ class GetApiProvidersRequestEventlet(EventletApiRequest):
         try:
             if self.successful():
                 ret = []
-                body = json.loads(self.value.body)
+                body = jsonutils.loads(self.value.body)
                 for node in body.get('results', []):
                     for role in node.get('roles', []):
                         if role.get('role') == 'api_provider':
@@ -209,7 +211,7 @@ class GetApiProvidersRequestEventlet(EventletApiRequest):
                                 ret.append(_provider_from_listen_addr(addr))
                 return ret
         except Exception as e:
-            LOG.warn(_("[%(rid)d] Failed to parse API provider: %(e)s"),
+            LOG.warn(_LW("[%(rid)d] Failed to parse API provider: %(e)s"),
                      {'rid': self._rid(), 'e': e})
             # intentionally fall through
         return None
@@ -220,14 +222,13 @@ class GenericRequestEventlet(EventletApiRequest):
 
     def __init__(self, client_obj, method, url, body, content_type,
                  auto_login=False,
-                 request_timeout=request.DEFAULT_REQUEST_TIMEOUT,
                  http_timeout=request.DEFAULT_HTTP_TIMEOUT,
                  retries=request.DEFAULT_RETRIES,
                  redirects=request.DEFAULT_REDIRECTS):
         headers = {"Content-Type": content_type}
         super(GenericRequestEventlet, self).__init__(
             client_obj, url, method, body, headers,
-            request_timeout=request_timeout, retries=retries,
+            retries=retries,
             auto_login=auto_login, redirects=redirects,
             http_timeout=http_timeout)
 
